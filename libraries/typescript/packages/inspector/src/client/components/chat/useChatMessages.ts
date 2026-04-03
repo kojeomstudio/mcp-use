@@ -1,0 +1,492 @@
+import { useCallback, useRef, useState } from "react";
+import type { PromptResult } from "../../hooks/useMCPPrompts";
+import { convertPromptResultsToMessages } from "./conversion";
+import type {
+  AuthConfig,
+  LLMConfig,
+  Message,
+  MessageAttachment,
+} from "./types";
+import { fileToAttachment, hashString, isValidTotalSize } from "./utils";
+
+interface WidgetModelContext {
+  content?: Array<{ type: string; text: string }>;
+  structuredContent?: Record<string, unknown>;
+}
+
+interface UseChatMessagesProps {
+  mcpServerUrl: string;
+  llmConfig: LLMConfig | null;
+  authConfig: AuthConfig | null;
+  isConnected: boolean;
+  /** Custom API endpoint URL for chat streaming. Defaults to "/inspector/api/chat/stream". */
+  chatApiUrl?: string;
+  /** When chatApiUrl is not yet available, called before sending to resolve the URL. Useful for background initialization. */
+  waitForChatApiUrl?: () => Promise<string | undefined>;
+  /** Active widget model contexts to inject into the LLM conversation */
+  widgetModelContexts?: Map<string, WidgetModelContext | undefined>;
+  /** Pre-populate the chat with messages from a previous session (e.g. when restoring history). */
+  initialMessages?: Message[];
+}
+
+export function useChatMessages({
+  mcpServerUrl,
+  llmConfig,
+  authConfig,
+  isConnected,
+  chatApiUrl,
+  waitForChatApiUrl,
+  widgetModelContexts,
+  initialMessages,
+}: UseChatMessagesProps) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
+  const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const sendMessage = useCallback(
+    async (
+      userInput: string,
+      promptResults: PromptResult[],
+      extraAttachments?: MessageAttachment[]
+    ) => {
+      const allAttachments = [...attachments, ...(extraAttachments ?? [])];
+      // Can send if there's text, prompt results, or attachments
+      const hasContent =
+        userInput.trim() ||
+        promptResults.length > 0 ||
+        allAttachments.length > 0;
+      if (!hasContent || !llmConfig || !isConnected) {
+        return;
+      }
+
+      const promptResultsMessages =
+        convertPromptResultsToMessages(promptResults);
+
+      // Only create a user message if there's actual user input or user-uploaded attachments
+      // Don't create one when only using prompt results (they create their own messages)
+      const userMessages: Message[] = [...promptResultsMessages];
+
+      if (userInput.trim() || allAttachments.length > 0) {
+        const userMessage: Message = {
+          id: `user-${Date.now()}`,
+          role: "user",
+          content: userInput.trim(),
+          timestamp: Date.now(),
+          attachments: allAttachments.length > 0 ? allAttachments : undefined,
+        };
+        userMessages.push(userMessage);
+      }
+
+      setMessages((prev) => [...prev, ...userMessages]);
+      setIsLoading(true);
+
+      // Clear attachments after sending
+      setAttachments([]);
+
+      // Create abort controller for cancellation
+      abortControllerRef.current = new AbortController();
+
+      try {
+        // If using OAuth, retrieve tokens from localStorage
+        let authConfigWithTokens = authConfig;
+        if (authConfig?.type === "oauth") {
+          try {
+            // Get OAuth tokens from localStorage (same pattern as BrowserOAuthClientProvider)
+            // The key format is: `${storageKeyPrefix}_${serverUrlHash}_tokens`
+            const storageKeyPrefix = "mcp:auth";
+            const serverUrlHash = hashString(mcpServerUrl);
+            const storageKey = `${storageKeyPrefix}_${serverUrlHash}_tokens`;
+            const tokensStr = localStorage.getItem(storageKey);
+            if (tokensStr) {
+              const tokens = JSON.parse(tokensStr);
+              authConfigWithTokens = {
+                ...authConfig,
+                oauthTokens: tokens,
+              };
+            } else {
+              console.warn(
+                "No OAuth tokens found in localStorage for key:",
+                storageKey
+              );
+            }
+          } catch (error) {
+            console.warn("Failed to retrieve OAuth tokens:", error);
+          }
+        }
+
+        // Build widget state context messages (per SEP-1865 ui/update-model-context)
+        // These inform the LLM about current widget UI state so it can reason about what the user sees.
+        const widgetContextMessages: Array<{ role: string; content: string }> =
+          [];
+        if (widgetModelContexts && widgetModelContexts.size > 0) {
+          const parts: string[] = [];
+          for (const [, ctx] of widgetModelContexts) {
+            if (!ctx) continue;
+            if (ctx.content?.length) {
+              parts.push(ctx.content.map((c) => c.text).join("\n"));
+            } else if (ctx.structuredContent) {
+              parts.push(JSON.stringify(ctx.structuredContent));
+            }
+          }
+          if (parts.length > 0) {
+            widgetContextMessages.push({
+              role: "user",
+              content: `[Current Widget State]\n${parts.join("\n")}`,
+            });
+          }
+        }
+
+        const resolvedUrl =
+          chatApiUrl ??
+          (waitForChatApiUrl ? await waitForChatApiUrl() : undefined) ??
+          "/inspector/api/chat/stream";
+
+        const response = await fetch(resolvedUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: abortControllerRef.current.signal,
+          body: JSON.stringify({
+            mcpServerUrl,
+            llmConfig,
+            authConfig: authConfigWithTokens,
+            messages: [
+              ...[...messages, ...userMessages].map((m) => ({
+                role: m.role,
+                content:
+                  m.content ||
+                  (m.parts
+                    ?.filter((p) => p.type === "text")
+                    .map((p) => p.text)
+                    .join("") ??
+                    ""),
+                attachments: m.attachments,
+              })),
+              ...widgetContextMessages,
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        // Create assistant message that will be updated with streaming content
+        const assistantMessageId = `assistant-${Date.now()}`;
+        let currentTextPart = "";
+        const parts: Array<{
+          type: "text" | "tool-invocation";
+          text?: string;
+          toolInvocation?: {
+            toolName: string;
+            args: Record<string, unknown>;
+            result?: any;
+            state?: "pending" | "result" | "error";
+          };
+        }> = [];
+
+        // Add empty assistant message to start
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: "",
+            timestamp: Date.now(),
+            parts: [],
+          },
+        ]);
+
+        // Read the streaming response
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+          throw new Error("No response body");
+        }
+
+        let buffer = "";
+        while (true) {
+          // Check for abort
+          if (abortControllerRef.current?.signal.aborted) {
+            await reader.cancel();
+            break;
+          }
+
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          // Decode the chunk and add to buffer
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete lines from buffer
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+
+            // SSE format: lines start with "data: "
+            if (!line.startsWith("data: ")) continue;
+
+            try {
+              const event = JSON.parse(line.slice(6)); // Remove "data: " prefix
+              console.log(
+                "[Client received event]",
+                event.type,
+                event.toolName || event.content?.slice?.(0, 30)
+              );
+
+              if (event.type === "message") {
+                // Initial assistant message - just log it
+                console.log("[Message started]", event.id);
+              } else if (event.type === "text") {
+                // Streaming text content from LLM
+                currentTextPart += event.content;
+
+                // Update or add text part
+                const lastPart = parts[parts.length - 1];
+                if (lastPart && lastPart.type === "text") {
+                  // Update existing text part
+                  lastPart.text = currentTextPart;
+                } else {
+                  // Add new text part
+                  parts.push({
+                    type: "text",
+                    text: currentTextPart,
+                  });
+                }
+                console.log(
+                  "[Parts after text]",
+                  parts.length,
+                  "parts, text length:",
+                  currentTextPart.length
+                );
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, parts: [...parts] }
+                      : msg
+                  )
+                );
+              } else if (event.type === "tool-call") {
+                // Tool invocation started - finalize current text and add tool part
+                if (currentTextPart) {
+                  currentTextPart = "";
+                }
+
+                parts.push({
+                  type: "tool-invocation",
+                  toolInvocation: {
+                    toolName: event.toolName,
+                    args: event.args,
+                    state: "pending",
+                  },
+                });
+                console.log(
+                  "[Parts after tool-call]",
+                  parts.length,
+                  "parts, tool:",
+                  event.toolName
+                );
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, parts: [...parts] }
+                      : msg
+                  )
+                );
+              } else if (event.type === "tool-result") {
+                // Tool invocation completed
+                const toolPart = parts.find(
+                  (p) =>
+                    p.type === "tool-invocation" &&
+                    p.toolInvocation?.toolName === event.toolName &&
+                    !p.toolInvocation?.result
+                );
+
+                if (toolPart && toolPart.toolInvocation) {
+                  toolPart.toolInvocation.result = event.result;
+                  // Check if result indicates an error
+                  toolPart.toolInvocation.state = event.result?.isError
+                    ? "error"
+                    : "result";
+                  console.log(
+                    "[Parts after tool-result]",
+                    parts.length,
+                    "parts, updated:",
+                    event.toolName
+                  );
+
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, parts: [...parts] }
+                        : msg
+                    )
+                  );
+                } else {
+                  console.warn(
+                    "[tool-result] Could not find matching tool part for",
+                    event.toolName
+                  );
+                }
+              } else if (event.type === "done") {
+                // Final update - use done data if available
+                console.log("[Done] Final parts:", parts.length);
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? {
+                          ...msg,
+                          parts: [...parts],
+                          content: "", // Clear content since we're using parts
+                        }
+                      : msg
+                  )
+                );
+              } else if (event.type === "error") {
+                throw new Error(event.message || "Streaming error");
+              }
+            } catch (parseError) {
+              console.error(
+                "Failed to parse streaming event:",
+                parseError,
+                line
+              );
+            }
+          }
+        }
+
+        // If aborted, mark any pending tool calls as cancelled
+        if (abortControllerRef.current?.signal.aborted) {
+          for (const part of parts) {
+            if (
+              part.type === "tool-invocation" &&
+              part.toolInvocation?.state === "pending"
+            ) {
+              part.toolInvocation.state = "error";
+              part.toolInvocation.result = "Cancelled by user";
+            }
+          }
+
+          // Update messages with cancelled tool calls
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    parts: [...parts],
+                    content: "",
+                  }
+                : msg
+            )
+          );
+        }
+      } catch (error) {
+        // Don't show Abort Error
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        // Extract detailed error message with HTTP status
+        let errorDetail = "Unknown error occurred";
+        if (error instanceof Error) {
+          errorDetail = error.message;
+          const errorAny = error as any;
+          if (errorAny.status) {
+            errorDetail = `HTTP ${errorAny.status}: ${errorDetail}`;
+          }
+          if (
+            errorAny.code === 401 ||
+            errorDetail.includes("401") ||
+            errorDetail.includes("Unauthorized")
+          ) {
+            errorDetail = `Authentication failed (401). Check your Authorization header in the connection settings.`;
+          }
+        }
+
+        const errorMessage: Message = {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `Error: ${errorDetail}`,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+        abortControllerRef.current = null;
+      }
+    },
+    [
+      llmConfig,
+      isConnected,
+      mcpServerUrl,
+      messages,
+      authConfig,
+      attachments,
+      chatApiUrl,
+      waitForChatApiUrl,
+    ]
+  );
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+  }, []);
+
+  const stop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  }, []);
+
+  const addAttachment = useCallback(async (file: File) => {
+    try {
+      const attachment = await fileToAttachment(file);
+
+      setAttachments((prev) => {
+        const newAttachments = [...prev, attachment];
+
+        // Check total size
+        if (!isValidTotalSize(newAttachments)) {
+          alert("Total attachment size exceeds 20MB limit");
+          return prev;
+        }
+
+        return newAttachments;
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        alert(error.message);
+      } else {
+        alert("Failed to add attachment");
+      }
+    }
+  }, []);
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setAttachments([]);
+  }, []);
+
+  return {
+    messages,
+    isLoading,
+    attachments,
+    sendMessage,
+    clearMessages,
+    setMessages,
+    stop,
+    addAttachment,
+    removeAttachment,
+    clearAttachments,
+  };
+}

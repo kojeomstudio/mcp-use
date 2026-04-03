@@ -1,0 +1,619 @@
+import chalk from "chalk";
+import crypto from "node:crypto";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import open from "open";
+import { McpUseAPI } from "../utils/api.js";
+import {
+  deleteConfig,
+  getApiKey,
+  getWebUrl,
+  isLoggedIn,
+  readConfig,
+  writeConfig,
+} from "../utils/config.js";
+import type { ProfileInfo } from "../utils/api.js";
+
+const LOGIN_TIMEOUT = 300000; // 5 minutes
+
+/**
+ * Find an available port
+ */
+async function findAvailablePort(startPort: number = 8765): Promise<number> {
+  for (let port = startPort; port < startPort + 100; port++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const server = createServer();
+        server.once("error", reject);
+        server.once("listening", () => {
+          server.close();
+          resolve();
+        });
+        server.listen(port);
+      });
+      return port;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("No available ports found");
+}
+
+/**
+ * Start local server to receive OAuth callback
+ */
+async function startCallbackServer(
+  port: number,
+  expectedState: string
+): Promise<{ server: any; token: Promise<string> }> {
+  return new Promise((resolve, reject) => {
+    let tokenResolver: ((value: string) => void) | null = null;
+    const tokenPromise = new Promise<string>((res) => {
+      tokenResolver = res;
+    });
+
+    const server = createServer(
+      {
+        maxHeaderSize: 65536, // 64KB - handle very long JWT tokens in URL (increased from default 8192)
+      },
+      (req: IncomingMessage, res: ServerResponse) => {
+        if (req.url?.startsWith("/callback")) {
+          const url = new URL(req.url, `http://localhost:${port}`);
+          const token = url.searchParams.get("token");
+          const state = url.searchParams.get("state");
+
+          // Validate state parameter for CSRF protection
+          if (state !== expectedState) {
+            res.writeHead(400, { "Content-Type": "text/html" });
+            res.end(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <title>Security Error</title>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <style>
+                    body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                      min-height: 100vh;
+                      background: #000;
+                      padding: 1rem;
+                      margin: 0;
+                    }
+                    .container {
+                      max-width: 28rem;
+                      padding: 3rem;
+                      text-align: center;
+                      background: rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(40px);
+                      border: 1px solid rgba(255, 255, 255, 0.2);
+                      border-radius: 1.5rem;
+                    }
+                    h1 { color: #fff; font-size: 2rem; margin-bottom: 1rem; }
+                    p { color: rgba(255, 255, 255, 0.8); font-size: 1rem; }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <h1>Security Error</h1>
+                    <p>Invalid state parameter. Please try logging in again.</p>
+                  </div>
+                </body>
+              </html>
+            `);
+            return;
+          }
+
+          if (token && tokenResolver) {
+            // Send success response
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <title>Login Successful</title>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <style>
+                    * {
+                      margin: 0;
+                      padding: 0;
+                      box-sizing: border-box;
+                    }
+                    body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                      min-height: 100vh;
+                      background: #000;
+                      padding: 1rem;
+                    }
+                    .container {
+                      width: 100%;
+                      max-width: 28rem;
+                      padding: 3rem;
+                      text-align: center;
+                      -webkit-backdrop-filter: blur(40px);
+                      border: 1px solid rgba(255, 255, 255, 0.2);
+                      border-radius: 1.5rem;
+                      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    }
+                    .icon-container {
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      width: 6rem;
+                      height: 6rem;
+                      margin-bottom: 2rem;
+                      background: rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(10px);
+                      -webkit-backdrop-filter: blur(10px);
+                      border-radius: 50%;
+                    }
+                    .checkmark {
+                      font-size: 4rem;
+                      color: #fff;
+                      line-height: 1;
+                      animation: scaleIn 0.5s ease-out;
+                    }
+                    @keyframes scaleIn {
+                      from {
+                        transform: scale(0);
+                        opacity: 0;
+                      }
+                      to {
+                        transform: scale(1);
+                        opacity: 1;
+                      }
+                    }
+                    h1 {
+                      color: #fff;
+                      margin: 0 0 1rem 0;
+                      font-size: 2.5rem;
+                      font-weight: 700;
+                      letter-spacing: -0.025em;
+                    }
+                    p {
+                      color: rgba(255, 255, 255, 0.8);
+                      margin: 0 0 2rem 0;
+                      font-size: 1.125rem;
+                      line-height: 1.5;
+                    }
+                    .spinner {
+                      display: inline-block;
+                      width: 2rem;
+                      height: 2rem;
+                      border: 3px solid rgba(255, 255, 255, 0.3);
+                      border-top-color: #fff;
+                      border-radius: 50%;
+                      animation: spin 0.8s linear infinite;
+                    }
+                    @keyframes spin {
+                      to { transform: rotate(360deg); }
+                    }
+                    .footer {
+                      margin-top: 2rem;
+                      color: rgba(255, 255, 255, 0.6);
+                      font-size: 0.875rem;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <h1>Authentication Successful!</h1>
+                    <p>You can now close this window and return to the CLI.</p>
+                  </div>
+                </body>
+              </html>
+            `);
+            tokenResolver(token);
+          } else {
+            res.writeHead(400, { "Content-Type": "text/html" });
+            res.end(`
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <title>Login Failed</title>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <style>
+                    * {
+                      margin: 0;
+                      padding: 0;
+                      box-sizing: border-box;
+                    }
+                    body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                      min-height: 100vh;
+                      background: #000;
+                      padding: 1rem;
+                    }
+                    .container {
+                      width: 100%;
+                      max-width: 28rem;
+                      padding: 3rem;
+                      text-align: center;
+                      background: rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(40px);
+                      -webkit-backdrop-filter: blur(40px);
+                      border: 1px solid rgba(255, 255, 255, 0.2);
+                      border-radius: 1.5rem;
+                      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    }
+                    .icon-container {
+                      display: inline-flex;
+                      align-items: center;
+                      justify-content: center;
+                      width: 6rem;
+                      height: 6rem;
+                      margin-bottom: 2rem;
+                      background: rgba(255, 255, 255, 0.1);
+                      backdrop-filter: blur(10px);
+                      -webkit-backdrop-filter: blur(10px);
+                      border-radius: 50%;
+                    }
+                    .cross {
+                      font-size: 4rem;
+                      color: #fff;
+                      line-height: 1;
+                    }
+                    h1 {
+                      color: #fff;
+                      margin: 0 0 1rem 0;
+                      font-size: 2.5rem;
+                      font-weight: 700;
+                      letter-spacing: -0.025em;
+                    }
+                    p {
+                      color: rgba(255, 255, 255, 0.8);
+                      margin: 0;
+                      font-size: 1.125rem;
+                      line-height: 1.5;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <div class="icon-container">
+                      <div class="cross">✗</div>
+                    </div>
+                    <h1>Login Failed</h1>
+                    <p>No token received. Please try again.</p>
+                  </div>
+                </body>
+              </html>
+            `);
+          }
+        }
+      }
+    );
+
+    server.listen(port, () => {
+      resolve({ server, token: tokenPromise });
+    });
+
+    server.on("error", reject);
+  });
+}
+
+/**
+ * Prompt user to pick an organization from a numbered list.
+ * Returns the selected profile or null if selection fails.
+ */
+export async function promptOrgSelection(
+  profiles: ProfileInfo[],
+  defaultProfileId?: string | null
+): Promise<ProfileInfo | null> {
+  if (profiles.length === 0) return null;
+
+  if (profiles.length === 1) {
+    return profiles[0];
+  }
+
+  console.log(chalk.cyan.bold("\n🏢 Select an organization:\n"));
+
+  for (let i = 0; i < profiles.length; i++) {
+    const p = profiles[i];
+    const marker = p.id === defaultProfileId ? chalk.green(" (current)") : "";
+    const slug = p.slug ? chalk.gray(` (${p.slug})`) : "";
+    console.log(
+      `  ${chalk.white(`${i + 1}.`)} ${p.profile_name}${slug}${marker}`
+    );
+  }
+
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    const defaultIdx = defaultProfileId
+      ? profiles.findIndex((p) => p.id === defaultProfileId)
+      : 0;
+    const defaultDisplay = defaultIdx >= 0 ? defaultIdx + 1 : 1;
+
+    rl.question(
+      chalk.gray(`\nEnter number [${defaultDisplay}]: `),
+      (answer) => {
+        rl.close();
+        const trimmed = answer.trim();
+        const idx = trimmed === "" ? defaultIdx : parseInt(trimmed, 10) - 1;
+        if (idx >= 0 && idx < profiles.length) {
+          resolve(profiles[idx]);
+        } else {
+          console.log(chalk.yellow("Invalid selection, using default."));
+          resolve(profiles[defaultIdx >= 0 ? defaultIdx : 0]);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Login command - opens browser for OAuth flow
+ */
+export async function loginCommand(options?: {
+  silent?: boolean;
+}): Promise<void> {
+  try {
+    // Check if already logged in
+    if (await isLoggedIn()) {
+      // Only show message if not in silent mode
+      if (!options?.silent) {
+        console.log(
+          chalk.yellow(
+            "⚠️  You are already logged in. Run 'npx mcp-use logout' first if you want to login with a different account."
+          )
+        );
+      }
+      return;
+    }
+
+    console.log(chalk.cyan.bold("🔐 Logging in to Manufact cloud...\n"));
+
+    // Generate state for CSRF protection
+    const state = crypto.randomBytes(32).toString("hex");
+
+    // Find available port
+    const port = await findAvailablePort();
+    const redirectUri = `http://localhost:${port}/callback`;
+
+    console.log(chalk.gray(`Starting local server on port ${port}...`));
+
+    // Start callback server
+    const { server, token } = await startCallbackServer(port, state);
+
+    // Get the web URL (respects NEXT_PUBLIC_API_URL)
+    const webUrl = await getWebUrl();
+    const loginUrl = `${webUrl}/auth/cli?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+
+    console.log(chalk.gray(`Opening browser to ${webUrl}/auth/cli...\n`));
+    console.log(
+      chalk.white(
+        "If the browser doesn't open automatically, please visit:\n" +
+          chalk.cyan(loginUrl)
+      )
+    );
+
+    // Open browser
+    await open(loginUrl);
+
+    console.log(
+      chalk.gray("\nWaiting for authentication... (this may take a moment)")
+    );
+
+    // Wait for token with timeout
+    const jwtToken = await Promise.race([
+      token,
+      new Promise<string>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Login timeout - please try again")),
+          LOGIN_TIMEOUT
+        )
+      ),
+    ]);
+
+    // Close server
+    server.close();
+
+    console.log(
+      chalk.gray("Received authentication token, creating API key...")
+    );
+
+    // Create API key using JWT token
+    const api = await McpUseAPI.create();
+    const apiKeyResponse = await api.createApiKey(jwtToken, "CLI");
+
+    // Save API key to config
+    await writeConfig({
+      apiKey: apiKeyResponse.api_key,
+    });
+
+    console.log(chalk.green.bold("\n✓ Successfully logged in!"));
+
+    // Show user info and select organization
+    try {
+      const api = await McpUseAPI.create();
+      const authInfo = await api.testAuth();
+
+      console.log(chalk.cyan.bold("\n👤 Current user:\n"));
+      console.log(chalk.white("Email:   ") + chalk.cyan(authInfo.email));
+      console.log(chalk.white("User ID: ") + chalk.gray(authInfo.user_id));
+
+      const apiKey = await getApiKey();
+      if (apiKey) {
+        const masked = apiKey.substring(0, 6) + "...";
+        console.log(chalk.white("API Key: ") + chalk.gray(masked));
+      }
+
+      // Organization selection
+      const profiles = authInfo.profiles ?? [];
+      if (profiles.length > 0) {
+        let selectedProfile: ProfileInfo | null = null;
+
+        if (profiles.length === 1) {
+          selectedProfile = profiles[0];
+        } else {
+          selectedProfile = await promptOrgSelection(
+            profiles,
+            authInfo.default_profile_id
+          );
+        }
+
+        if (selectedProfile) {
+          const config = await readConfig();
+          await writeConfig({
+            ...config,
+            profileId: selectedProfile.id,
+            profileName: selectedProfile.profile_name,
+            profileSlug: selectedProfile.slug ?? undefined,
+          });
+
+          const slug = selectedProfile.slug
+            ? chalk.gray(` (${selectedProfile.slug})`)
+            : "";
+          console.log(
+            chalk.white("Org:     ") +
+              chalk.cyan(selectedProfile.profile_name) +
+              slug
+          );
+        }
+      }
+    } catch (error) {
+      // If fetching user info fails, just skip it
+      console.log(
+        chalk.gray(
+          `\nYour API key has been saved to ${chalk.white("~/.mcp-use/config.json")}`
+        )
+      );
+    }
+
+    console.log(
+      chalk.gray(
+        "\nYou can now deploy your MCP servers with " +
+          chalk.white("npx mcp-use deploy")
+      )
+    );
+    console.log(
+      chalk.gray("To logout later, run " + chalk.white("npx mcp-use logout"))
+    );
+
+    // Return successfully (no process.exit so it can be reused by other commands)
+  } catch (error) {
+    // Throw error instead of exiting so calling code can handle it
+    throw new Error(
+      `Login failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+/**
+ * Logout command - revokes API key and deletes config
+ */
+export async function logoutCommand(): Promise<void> {
+  try {
+    // Check if logged in
+    if (!(await isLoggedIn())) {
+      console.log(chalk.yellow("⚠️  You are not logged in."));
+      return;
+    }
+
+    console.log(chalk.cyan.bold("🔓 Logging out...\n"));
+
+    // Note: We can't revoke the API key from the CLI because we'd need the key_id
+    // which isn't stored in the config. The API key will remain valid until
+    // manually revoked from the web interface.
+    // For now, we just delete the local config.
+
+    await deleteConfig();
+
+    console.log(chalk.green.bold("✓ Successfully logged out!"));
+    console.log(
+      chalk.gray(
+        "\nYour local config has been deleted. The API key will remain active until revoked from the web interface."
+      )
+    );
+  } catch (error) {
+    console.error(
+      chalk.red.bold("\n✗ Logout failed:"),
+      chalk.red(error instanceof Error ? error.message : "Unknown error")
+    );
+    process.exit(1);
+  }
+}
+
+/**
+ * Whoami command - shows current user info
+ */
+export async function whoamiCommand(): Promise<void> {
+  try {
+    // Check if logged in
+    if (!(await isLoggedIn())) {
+      console.log(chalk.yellow("⚠️  You are not logged in."));
+      console.log(
+        chalk.gray(
+          "Run " + chalk.white("npx mcp-use login") + " to get started."
+        )
+      );
+      return;
+    }
+
+    console.log(chalk.cyan.bold("👤 Current user:\n"));
+
+    const api = await McpUseAPI.create();
+    const authInfo = await api.testAuth();
+
+    console.log(chalk.white("Email:   ") + chalk.cyan(authInfo.email));
+    console.log(chalk.white("User ID: ") + chalk.gray(authInfo.user_id));
+
+    const apiKey = await getApiKey();
+    if (apiKey) {
+      const masked = apiKey.substring(0, 6) + "...";
+      console.log(chalk.white("API Key: ") + chalk.gray(masked));
+    }
+
+    // Show organization info
+    const config = await readConfig();
+    const profiles = authInfo.profiles ?? [];
+    if (profiles.length > 0) {
+      const activeProfile = profiles.find(
+        (p) => p.id === (config.profileId || authInfo.default_profile_id)
+      );
+
+      if (activeProfile) {
+        const slug = activeProfile.slug
+          ? chalk.gray(` (${activeProfile.slug})`)
+          : "";
+        console.log(
+          chalk.white("Org:     ") +
+            chalk.cyan(activeProfile.profile_name) +
+            slug
+        );
+      }
+
+      if (profiles.length > 1) {
+        console.log(
+          chalk.gray(
+            `\n  ${profiles.length} organizations available. Use ` +
+              chalk.white("npx mcp-use org list") +
+              " to see all."
+          )
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      chalk.red.bold("\n✗ Failed to get user info:"),
+      chalk.red(error instanceof Error ? error.message : "Unknown error")
+    );
+    process.exit(1);
+  }
+}
