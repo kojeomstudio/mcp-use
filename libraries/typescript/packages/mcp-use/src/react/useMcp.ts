@@ -41,6 +41,7 @@ type UseMcpAuthProvider = OAuthClientProvider & {
   clearStorage?: () => number;
   getLastAttemptedAuthUrl?: () => string | null | undefined;
   installFetchInterceptor?: () => void;
+  restoreFetch?: () => void;
   serverUrl?: string;
 };
 
@@ -1403,7 +1404,9 @@ export function useMcp(options: UseMcpOptions): UseMcpResult {
             "info",
             "Using provided authProvider for manual authentication"
           );
-          const baseUrl = new URL(url).origin;
+          const parsedUrl = new URL(url);
+          const baseUrl =
+            parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
           await auth(authProviderRef.current, {
             serverUrl: baseUrl,
           });
@@ -1452,7 +1455,9 @@ export function useMcp(options: UseMcpOptions): UseMcpResult {
         // Generate a fresh authorization URL and redirect immediately
         // This will trigger the OAuth flow with the new provider
         // The provider will redirect/popup automatically since preventAutoAuth is false
-        const baseUrl = new URL(url).origin;
+        const parsedUrl = new URL(url);
+        const baseUrl =
+          parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
         try {
           await auth(freshAuthProvider, {
             serverUrl: baseUrl,
@@ -2020,6 +2025,10 @@ export function useMcp(options: UseMcpOptions): UseMcpResult {
     return () => {
       isMountedRef.current = false;
       addLog("debug", "useMcp unmounting, disconnecting.");
+
+      // Restore window.fetch if a proxy interceptor was installed.
+      // restoreFetch() is a no-op when no interceptor is active.
+      authProviderRef.current?.restoreFetch?.();
 
       // Clear OAuth state ONLY if we're in the middle of an OAuth flow
       // This prevents "code verifier not found" errors in StrictMode double-mounting

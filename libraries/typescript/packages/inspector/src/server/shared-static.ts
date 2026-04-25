@@ -28,6 +28,12 @@ const CDN_JS_URL = `${CDN_BASE}/inspector@${INSPECTOR_VERSION}.js`;
 const CDN_CSS_URL = `${CDN_BASE}/inspector@${INSPECTOR_VERSION}.css`;
 
 /**
+ * Inspector deployment mode. Identifies how the inspector is being served so the
+ * client can distinguish the three supported deployments.
+ */
+export type InspectorMode = "standalone" | "embedded" | "cloud";
+
+/**
  * Runtime configuration injected into the inspector HTML at serve time.
  */
 interface RuntimeConfig {
@@ -37,6 +43,18 @@ interface RuntimeConfig {
   sandboxOrigin?: string | null;
   /** Relative path to the MCP proxy (e.g. "/inspector/api/proxy"). When set, the client uses it for autoProxyFallback. Omit when the proxy is not available (e.g. Python server serving inspector). */
   proxyUrl?: string | null;
+  /** How the inspector is being served (standalone CLI, embedded in mcp-use, or cloud-hosted). Consumed by telemetry. */
+  inspectorMode?: InspectorMode;
+  /**
+   * Full URL of the Manufact hosted chat stream endpoint
+   * (e.g. `https://manufact.com/api/v1/inspector/chat/stream`). When set, the
+   * client switches the Chat tab to hosted mode: uses this endpoint with
+   * `credentials: "include"` and shows the free-tier banner / login modal.
+   *
+   * Prefer this over the build-time `VITE_MANUFACT_CHAT_URL` so a single
+   * pre-built npm tarball can be configured at deploy time.
+   */
+  manufactChatUrl?: string | null;
 }
 
 /**
@@ -61,6 +79,18 @@ function injectRuntimeConfig(html: string, config?: RuntimeConfig): string {
   if (config.proxyUrl !== undefined) {
     scripts.push(
       `<script>window.__MCP_PROXY_URL__ = ${JSON.stringify(config.proxyUrl)};</script>`
+    );
+  }
+
+  if (config.inspectorMode) {
+    scripts.push(
+      `<script>window.__MCP_INSPECTOR_MODE__ = ${JSON.stringify(config.inspectorMode)};</script>`
+    );
+  }
+
+  if (config.manufactChatUrl) {
+    scripts.push(
+      `<script>window.__MANUFACT_CHAT_URL__ = ${JSON.stringify(config.manufactChatUrl)};</script>`
     );
   }
 
@@ -91,6 +121,16 @@ function generateCdnShellHtml(config?: RuntimeConfig): string {
     if (config.proxyUrl !== undefined) {
       scripts.push(
         `<script>window.__MCP_PROXY_URL__ = ${JSON.stringify(config.proxyUrl)};</script>`
+      );
+    }
+    if (config.inspectorMode) {
+      scripts.push(
+        `<script>window.__MCP_INSPECTOR_MODE__ = ${JSON.stringify(config.inspectorMode)};</script>`
+      );
+    }
+    if (config.manufactChatUrl) {
+      scripts.push(
+        `<script>window.__MANUFACT_CHAT_URL__ = ${JSON.stringify(config.manufactChatUrl)};</script>`
       );
     }
     return scripts.join("\n    ");
@@ -126,6 +166,36 @@ function generateCdnShellHtml(config?: RuntimeConfig): string {
     />
     <link rel="stylesheet" href="${CDN_CSS_URL}" />
     <title>Inspector | mcp-use</title>
+    <meta
+      name="description"
+      content="Free, open-source MCP Inspector by mcp-use. Connect to any MCP server, test tools, prompts, and resources, inspect RPC logs, and debug MCP apps — all in your browser."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="mcp-use" />
+    <meta property="og:url" content="https://inspector.mcp-use.com" />
+    <meta property="og:title" content="MCP Inspector — Test &amp; Debug MCP Servers | mcp-use" />
+    <meta
+      property="og:description"
+      content="Free, open-source MCP Inspector by mcp-use. Connect to any MCP server, test tools, prompts, and resources, inspect RPC logs, and debug MCP apps — all in your browser."
+    />
+    <meta
+      property="og:image"
+      content="https://inspector-cdn.mcp-use.com/inspector-cover.png"
+    />
+    <meta property="og:image:alt" content="mcp-use MCP Inspector — test and debug MCP servers" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@mcpuse" />
+    <meta name="twitter:creator" content="@mcpuse" />
+    <meta name="twitter:title" content="MCP Inspector — Test &amp; Debug MCP Servers | mcp-use" />
+    <meta
+      name="twitter:description"
+      content="Free, open-source MCP Inspector by mcp-use. Connect to any MCP server, test tools, prompts, and resources, inspect RPC logs, and debug MCP apps — all in your browser."
+    />
+    <meta
+      name="twitter:image"
+      content="https://inspector-cdn.mcp-use.com/inspector-cover.png"
+    />
+    <meta name="twitter:image:alt" content="mcp-use MCP Inspector — test and debug MCP servers" />
     <script>window.__INSPECTOR_VERSION__ = ${JSON.stringify(INSPECTOR_VERSION)};</script>
     ${runtimeScripts}
   </head>
@@ -297,7 +367,8 @@ export function registerStaticRoutes(
  */
 export function registerStaticRoutesWithDevProxy(
   app: Hono,
-  clientDistPath?: string
+  clientDistPath?: string,
+  runtimeConfig?: RuntimeConfig
 ) {
   const distPath = clientDistPath || getClientDistPath();
   const isDev =
@@ -352,6 +423,6 @@ export function registerStaticRoutesWithDevProxy(
       `);
     });
   } else {
-    registerStaticRoutes(app, distPath);
+    registerStaticRoutes(app, distPath, runtimeConfig);
   }
 }
