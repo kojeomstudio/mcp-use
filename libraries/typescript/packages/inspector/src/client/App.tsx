@@ -3,6 +3,7 @@ import { InspectorDashboard } from "@/client/components/InspectorDashboard";
 import { Layout } from "@/client/components/Layout";
 import { OAuthCallback } from "@/client/components/OAuthCallback";
 import { SamplingRequestToast } from "@/client/components/sampling/SamplingRequestToast";
+import { ViewPreview } from "@/client/components/ViewPreview";
 import { Toaster } from "@/client/components/ui/sonner";
 import {
   LocalStorageProvider,
@@ -69,6 +70,27 @@ function App() {
   const proxyAddress = injectedProxyPath
     ? `${window.location.origin}${injectedProxyPath}`
     : undefined;
+
+  // App-level so it fires regardless of route, and after <Toaster /> mounts.
+  useEffect(() => {
+    const authError = urlParams.get("auth_error");
+    if (!authError) return;
+    const description = urlParams.get("auth_error_description");
+    toast.error(`OAuth authentication failed: ${description || authError}`, {
+      duration: Infinity,
+      closeButton: true,
+    });
+    // Clone before mutating so we don't disturb the params consumed above.
+    const cleaned = new URLSearchParams(urlParams);
+    cleaned.delete("auth_error");
+    cleaned.delete("auth_error_description");
+    const search = cleaned.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${search ? `?${search}` : ""}`
+    );
+  }, []);
 
   return (
     <ThemeProvider forcedTheme={forcedTheme || undefined}>
@@ -188,6 +210,7 @@ function App() {
             <Router basename="/inspector">
               <Routes>
                 <Route path="/oauth/callback" element={<OAuthCallback />} />
+                <Route path="/preview/:view" element={<ViewPreview />} />
                 <Route
                   path="/"
                   element={

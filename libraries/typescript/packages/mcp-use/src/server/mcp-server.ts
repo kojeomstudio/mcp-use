@@ -658,7 +658,7 @@ class MCPServerClass<HasOAuth extends boolean = false> {
         title: registration.config.title,
         description: registration.config.description ?? "",
         inputSchema: inputSchema,
-        outputSchema: undefined,
+        outputSchema: (registration.config as ToolDefinition).outputSchema,
         annotations: registration.config.annotations,
         execution: { taskSupport: "forbidden" as const },
         _meta: registration.config._meta,
@@ -1365,7 +1365,7 @@ class MCPServerClass<HasOAuth extends boolean = false> {
         title: config.title,
         description: config.description ?? "",
         inputSchema,
-        outputSchema: undefined,
+        outputSchema: config.outputSchema,
         annotations: config.annotations,
         execution: { taskSupport: "forbidden" },
         _meta: config._meta,
@@ -2872,6 +2872,7 @@ class MCPServerClass<HasOAuth extends boolean = false> {
           title: config.title,
           description: config.description ?? "",
           inputSchema,
+          ...(config.outputSchema ? { outputSchema: config.outputSchema } : {}),
           annotations: config.annotations,
           _meta: config._meta,
         },
@@ -3320,8 +3321,13 @@ class MCPServerClass<HasOAuth extends boolean = false> {
    * @param callback - Optional callback function (alternative to toolDefinition.cb)
    * @returns This server instance for method chaining
    *
+   * Response helpers (`text`, `object`, `image`, `markdown`, `html`, `error`,
+   * `widget`, etc.) are exported from `mcp-use/server` — see {@link text}.
+   *
    * @example
    * ```typescript
+   * import { text } from "mcp-use/server";
+   *
    * // Basic tool
    * server.tool({
    *   name: 'get-time',
@@ -3333,6 +3339,9 @@ class MCPServerClass<HasOAuth extends boolean = false> {
    *
    * @example
    * ```typescript
+   * import { text } from "mcp-use/server";
+   * import { z } from "zod";
+   *
    * // Tool with parameters
    * server.tool({
    *   name: 'add',
@@ -3348,6 +3357,8 @@ class MCPServerClass<HasOAuth extends boolean = false> {
    *
    * @example
    * ```typescript
+   * import { text, error } from "mcp-use/server";
+   *
    * // Tool with context (for OAuth)
    * server.tool({
    *   name: 'user-info',

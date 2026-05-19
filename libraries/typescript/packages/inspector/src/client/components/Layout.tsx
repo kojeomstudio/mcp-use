@@ -18,6 +18,7 @@ import {
   getStoredConnectionConfig,
   isAliasOnlyConnectionUpdate,
   type EditableConnectionConfig,
+  type OAuthStaticConfig,
 } from "@/client/utils/connectionUpdates";
 import { useMcpClient, type McpServer } from "mcp-use/react";
 import type { ReactNode } from "react";
@@ -61,7 +62,8 @@ export function Layout({ children }: LayoutProps) {
       url: string,
       name?: string,
       proxyConfig?: any,
-      transportType?: "http" | "sse"
+      transportType?: "http" | "sse",
+      oauth?: OAuthStaticConfig
     ) => {
       addServer(url, {
         url,
@@ -69,6 +71,7 @@ export function Layout({ children }: LayoutProps) {
         proxyConfig,
         transportType,
         preventAutoAuth: true,
+        useRedirectFlow: true,
         clientOptions: {
           capabilities: {
             extensions: {
@@ -78,6 +81,7 @@ export function Layout({ children }: LayoutProps) {
             },
           },
         },
+        ...(oauth ? { oauth } : {}),
       });
     },
     [addServer]
@@ -395,7 +399,8 @@ export function Layout({ children }: LayoutProps) {
           config.url,
           config.name,
           config.proxyConfig,
-          config.transportType
+          config.transportType,
+          config.oauth
         );
       } else if (
         currentConnection &&
@@ -410,6 +415,7 @@ export function Layout({ children }: LayoutProps) {
           name: config.name,
           proxyConfig: config.proxyConfig,
           transportType: config.transportType,
+          oauth: config.oauth,
         });
       }
 

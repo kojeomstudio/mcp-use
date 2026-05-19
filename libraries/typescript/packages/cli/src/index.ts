@@ -12,7 +12,14 @@ import open from "open";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { toJSONSchema } from "zod";
 import { loginCommand, logoutCommand, whoamiCommand } from "./commands/auth.js";
-import { createClientCommand } from "./commands/client.js";
+import {
+  PER_CLIENT_SCOPES,
+  RESERVED_CLIENT_SUBCOMMANDS,
+  createClientCommand,
+  createPerClientCommand,
+} from "./commands/client.js";
+import { getSession } from "./utils/session-storage.js";
+import { formatError } from "./utils/format.js";
 import { deployCommand } from "./commands/deploy.js";
 import { createDeploymentsCommand } from "./commands/deployments.js";
 import { createServersCommand } from "./commands/servers.js";
@@ -41,7 +48,8 @@ const packageVersion = packageJson.version || "unknown";
 program
   .name("mcp-use")
   .description("Create and run MCP servers with ui resources widgets")
-  .version(packageVersion);
+  .version(packageVersion)
+  .showHelpAfterError("(Run `mcp-use --help` to see available commands)");
 
 /**
  * Helper to display all package versions
@@ -440,10 +448,17 @@ async function findServerFile(
   return resolveEntryFile(projectPath, cliEntry, cliMcpDir);
 }
 
+function isBunRuntime(): boolean {
+  return (
+    typeof (globalThis as any).Bun !== "undefined" ||
+    typeof (process.versions as any).bun === "string"
+  );
+}
+
 async function generateToolRegistryTypesForServer(
   projectPath: string,
   serverFileRelative: string
-): Promise<boolean> {
+): Promise<"ok" | "failed" | "skipped"> {
   const serverFile = path.join(projectPath, serverFileRelative);
   const serverFileExists = await access(serverFile)
     .then(() => true)
@@ -451,6 +466,23 @@ async function generateToolRegistryTypesForServer(
 
   if (!serverFileExists) {
     throw new Error(`Server file not found: ${serverFile}`);
+  }
+
+  // `tsx/esm/api` uses Node's custom loader hooks, which bun doesn't
+  // implement. Under bun we can't generate the registry types at build
+  // time; skip with a clear note so the build continues.
+  if (isBunRuntime()) {
+    console.log(
+      chalk.yellow(
+        "⚠ Skipping tool registry type generation under bun runtime (requires Node.js loader hooks)."
+      )
+    );
+    console.log(
+      chalk.gray(
+        "  Run `mcp-use generate-types` with node to refresh .mcp-use/tool-registry.d.ts."
+      )
+    );
+    return "skipped";
   }
 
   const previousHmrMode = (globalThis as any).__mcpUseHmrMode;
@@ -547,7 +579,7 @@ async function generateToolRegistryTypesForServer(
       server.registrations.tools,
       projectPath
     );
-    return success;
+    return success ? "ok" : "failed";
   } finally {
     (globalThis as any).__mcpUseHmrMode = previousHmrMode ?? false;
   }
@@ -1330,7 +1362,8 @@ async function transpileWithEsbuild(projectPath: string): Promise<void> {
     entryPoints: files.map((f) => path.join(projectPath, f)),
     outdir: path.join(projectPath, outDir),
     outbase,
-    bundle: false,
+    bundle: true,
+    packages: "external",
     format,
     target,
     jsx,
@@ -1404,16 +1437,31 @@ program
 
       if (sourceServerFile) {
         console.log(chalk.gray("Generating tool registry types..."));
-        const typeGenOk = await generateToolRegistryTypesForServer(
-          projectPath,
-          sourceServerFile
-        );
-        if (typeGenOk) {
-          console.log(chalk.green("✓ Tool registry types generated"));
-        } else {
+        // Type generation is a dev convenience (regenerates
+        // .mcp-use/tool-registry.d.ts). Keep it non-fatal during build so
+        // a runtime without the right loader hooks (e.g. bun alpine) or
+        // an unrelated import-time error in the server file can't block
+        // the Docker build.
+        try {
+          const typeGenResult = await generateToolRegistryTypesForServer(
+            projectPath,
+            sourceServerFile
+          );
+          if (typeGenResult === "ok") {
+            console.log(chalk.green("✓ Tool registry types generated"));
+          } else if (typeGenResult === "failed") {
+            console.log(
+              chalk.yellow(
+                "⚠ Tool registry type generation had errors (non-blocking)"
+              )
+            );
+          }
+          // "skipped" already logged its own warning inside the function.
+        } catch (err) {
           console.log(
             chalk.yellow(
-              "⚠ Tool registry type generation had errors (non-blocking)"
+              "⚠ Tool registry type generation failed (non-blocking): " +
+                (err instanceof Error ? err.message : String(err))
             )
           );
         }
@@ -1449,22 +1497,21 @@ program
       // for type-checking its own tree during `next build`.
       if (options.typecheck !== false && !mcpDir) {
         console.log(chalk.gray("Type checking..."));
+        // Use the current runtime binary (`process.execPath`) rather than
+        // hardcoding "node". Alpine images built on `oven/bun:alpine`
+        // don't ship a `node` binary, and bun runs tsc fine.
+        const tscBin = path.join(
+          projectPath,
+          "node_modules",
+          "typescript",
+          "bin",
+          "tsc"
+        );
+        const tscArgs = isBunRuntime()
+          ? [tscBin, "--noEmit"]
+          : ["--max-old-space-size=4096", tscBin, "--noEmit"];
         try {
-          await runCommand(
-            "node",
-            [
-              "--max-old-space-size=4096",
-              path.join(
-                projectPath,
-                "node_modules",
-                "typescript",
-                "bin",
-                "tsc"
-              ),
-              "--noEmit",
-            ],
-            projectPath
-          ).promise;
+          await runCommand(process.execPath, tscArgs, projectPath).promise;
           console.log(chalk.green("✓ Type check passed!"));
         } catch {
           console.error(
@@ -2911,7 +2958,7 @@ program
 // Authentication commands
 program
   .command("login")
-  .description("Login to mcp-use cloud")
+  .description("Login to Manufact cloud")
   .option(
     "--api-key <key>",
     "Login with an API key directly (non-interactive, for CI/CD)"
@@ -3021,7 +3068,9 @@ program
     });
   });
 
-// Client command
+// Client command. The screenshot subcommand lives under `client`:
+//  - `mcp-use client screenshot --mcp <url>` for ad-hoc/programmatic use
+//  - `mcp-use client <name> screenshot` for saved servers (uses their auth)
 program.addCommand(createClientCommand());
 
 // Deployments command
@@ -3046,17 +3095,18 @@ program
 
     try {
       console.log(chalk.blue("Generating tool registry types..."));
-      const success = await generateToolRegistryTypesForServer(
+      const result = await generateToolRegistryTypesForServer(
         projectPath,
         options.server
       );
-      if (success) {
+      if (result === "ok") {
         console.log(
           chalk.green("✓ Tool registry types generated successfully")
         );
-      } else {
+      } else if (result === "failed") {
         console.log(chalk.yellow("⚠ Tool registry type generation had errors"));
       }
+      // "skipped" already logged its own warning inside the function.
       process.exit(0);
     } catch (error) {
       console.error(
@@ -3075,4 +3125,79 @@ program.hook("preAction", async (_thisCommand, actionCommand) => {
   await notifyIfUpdateAvailable(projectPath);
 });
 
-program.parse();
+/**
+ * Per-server routing for `mcp-use client <name> ...`.
+ *
+ * Commander doesn't natively dispatch on a dynamic positional that precedes a
+ * subcommand group. So we intercept here: if the token after `client` isn't a
+ * reserved subcommand (`connect`, `list`, `help`) or a flag, treat it as a
+ * saved-server name and parse the remainder against a per-server command tree.
+ */
+const argv = process.argv;
+// `client` is only valid as a subcommand at argv[2] (node + script + first
+// user token). Don't use `indexOf`, since the literal string "client" can
+// also appear later in argv as someone's argument value.
+const clientIdx = argv[2] === "client" ? 2 : -1;
+const perClientName =
+  clientIdx !== -1 &&
+  argv.length > clientIdx + 1 &&
+  !argv[clientIdx + 1].startsWith("-") &&
+  !RESERVED_CLIENT_SUBCOMMANDS.has(argv[clientIdx + 1])
+    ? argv[clientIdx + 1]
+    : null;
+
+if (perClientName) {
+  // Catch a common mistake: user typed `mcp-use client tools call X` and
+  // forgot the server name. Commander would otherwise route this as if
+  // "tools" were the server name and complain about an unknown command.
+  if (PER_CLIENT_SCOPES.has(perClientName)) {
+    const rest = argv.slice(clientIdx + 1).join(" ");
+    console.error(formatError("Missing server name."));
+    console.error("");
+    console.error(
+      `'${perClientName}' is a per-server subcommand, not a server name. ` +
+        `Address it through a saved server:`
+    );
+    console.error("");
+    console.error(`  mcp-use client <name> ${rest}`);
+    console.error("");
+    console.error("See your saved servers with:");
+    console.error("  mcp-use client list");
+    process.exit(1);
+  }
+
+  const rest = argv.slice(clientIdx + 2);
+  // Bare `mcp-use client <name>` (or with `--help`/`-h`) defaults to
+  // commander's help for the per-server tree. That help is only useful when
+  // the server actually exists — for an unknown name it leaks the subcommand
+  // surface instead of telling the user how to save the server. Intercept
+  // the no-subcommand path and check existence first.
+  const isHelpOnly =
+    rest.length === 0 ||
+    (rest.length === 1 && (rest[0] === "--help" || rest[0] === "-h"));
+
+  (async () => {
+    if (isHelpOnly) {
+      const config = await getSession(perClientName);
+      if (!config) {
+        console.error(formatError(`Server '${perClientName}' not found.`));
+        console.error("");
+        console.error("Connect to an MCP server and save it under this name:");
+        console.error(`  mcp-use client connect ${perClientName} <url>`);
+        console.error("");
+        console.error("See your saved servers with:");
+        console.error("  mcp-use client list");
+        process.exit(1);
+      }
+    }
+    await createPerClientCommand(perClientName).parseAsync(rest, {
+      from: "user",
+    });
+  })().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(formatError(message));
+    process.exit(1);
+  });
+} else {
+  program.parse();
+}

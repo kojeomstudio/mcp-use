@@ -39,9 +39,11 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { copyToClipboard } from "@/client/utils/clipboard";
 import {
+  buildOAuthStaticConfig,
   getStoredConnectionConfig,
   isAliasOnlyConnectionUpdate,
   type EditableConnectionConfig,
+  type OAuthStaticConfig,
 } from "@/client/utils/connectionUpdates";
 import {
   getConfiguredServerAlias,
@@ -49,6 +51,7 @@ import {
 } from "@/client/utils/serverNames";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
+import { INSPECTOR_RECONNECT_STORAGE_KEY } from "@/client/hooks/useAutoConnect";
 import { ConnectionSettingsForm } from "./ConnectionSettingsForm";
 import type { CustomHeader } from "./CustomHeadersEditor";
 import { ServerCapabilitiesModal } from "./ServerCapabilitiesModal";
@@ -147,13 +150,17 @@ export function InspectorDashboard() {
       url: string,
       name?: string,
       proxyConfig?: any,
-      transportType?: "http" | "sse"
+      transportType?: "http" | "sse",
+      oauth?: OAuthStaticConfig
     ) => {
       addServer(url, {
         url,
         name,
         proxyConfig,
         transportType,
+        preventAutoAuth: true,
+        useRedirectFlow: true,
+        ...(oauth ? { oauth } : {}),
       });
     },
     [addServer]
@@ -169,6 +176,7 @@ export function InspectorDashboard() {
           headers?: Record<string, string>;
         };
         transportType?: "http" | "sse";
+        oauth?: OAuthStaticConfig;
       }
     ) => {
       // Check if already updating this connection
@@ -296,6 +304,7 @@ export function InspectorDashboard() {
   );
   // OAuth fields
   const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [scope, setScope] = useState("");
 
   const connectFormGradientRef = useRef<HTMLDivElement>(null);
@@ -408,12 +417,15 @@ export function InspectorDashboard() {
           }
         : undefined;
 
+    const oauthConfig = buildOAuthStaticConfig(clientId, clientSecret, scope);
+
     // Build server configuration with proper typing
     const serverConfig: McpServerOptions = {
       url: normalizedUrl,
       name: alias.trim() || normalizedUrl,
       transportType: "http",
       preventAutoAuth: true, // Prevent auto OAuth popup - user must click "Authenticate" button
+      useRedirectFlow: true,
       clientOptions: {
         capabilities: {
           extensions: {
@@ -434,6 +446,7 @@ export function InspectorDashboard() {
       ...(Object.keys(headersObject).length > 0 && !proxyConfig
         ? { headers: headersObject }
         : {}),
+      ...(oauthConfig ? { oauth: oauthConfig } : {}),
     };
 
     // Add server directly - useMcp handles proxy fallback automatically via autoProxyFallback
@@ -459,10 +472,21 @@ export function InspectorDashboard() {
     setUrl("");
     setCustomHeaders([]);
     setClientId("");
+    setClientSecret("");
     setScope("");
 
     toast.success("Server added successfully");
-  }, [url, alias, connectionType, proxyAddress, customHeaders, addServer]);
+  }, [
+    url,
+    alias,
+    connectionType,
+    proxyAddress,
+    customHeaders,
+    clientId,
+    clientSecret,
+    scope,
+    addServer,
+  ]);
 
   const handleClearAllConnections = () => {
     // Remove all connections
@@ -567,7 +591,8 @@ export function InspectorDashboard() {
           config.url,
           config.name,
           config.proxyConfig,
-          config.transportType
+          config.transportType,
+          config.oauth
         );
       } else if (
         currentConnection &&
@@ -582,6 +607,7 @@ export function InspectorDashboard() {
           name: config.name,
           proxyConfig: config.proxyConfig,
           transportType: config.transportType,
+          oauth: config.oauth,
         });
       }
 
@@ -1050,9 +1076,28 @@ export function InspectorDashboard() {
                         >
                           <a
                             href={connection.authUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Store connection config so trySessionReconnect() can
+                              // resume after an OAuth redirect (when ?autoConnect is absent).
+                              try {
+                                sessionStorage.setItem(
+                                  INSPECTOR_RECONNECT_STORAGE_KEY,
+                                  JSON.stringify({
+                                    url: connection.url,
+                                    name:
+                                      connection.name ||
+                                      "Auto-connected Server",
+                                    transportType:
+                                      (connection as any).transportType ||
+                                      "http",
+                                    connectionType: "Direct",
+                                  })
+                                );
+                              } catch {
+                                /* sessionStorage unavailable — best-effort */
+                              }
+                            }}
                           >
                             Authenticate
                           </a>
@@ -1151,6 +1196,8 @@ export function InspectorDashboard() {
             setProxyAddress={setProxyAddress}
             clientId={clientId}
             setClientId={setClientId}
+            clientSecret={clientSecret}
+            setClientSecret={setClientSecret}
             scope={scope}
             setScope={setScope}
             onConnect={handleAddConnection}

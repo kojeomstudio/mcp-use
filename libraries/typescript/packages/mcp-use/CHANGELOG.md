@@ -1,5 +1,686 @@
 # mcp-use
 
+## 1.28.0
+
+### Minor Changes
+
+- 46caf80: feat(auth): Node OAuth client provider + CLI OAuth flow
+
+  Adds a real OAuth flow to the `mcp-use` CLI. `mcp-use client connect <url>`
+  against an OAuth-protected MCP server now opens a browser, captures the
+  authorization code via a localhost loopback, persists tokens to
+  `~/.mcp-use/oauth/<urlHash>/`, and silently refreshes them on subsequent
+  commands — no flag plumbing.
+
+  New on `mcp-use`:
+  - `mcp-use/auth/node` entrypoint exporting `NodeOAuthClientProvider`,
+    `FileKVStore`, the `KVStore` type, and re-exporting the SDK's `auth` and
+    `UnauthorizedError`.
+  - `NodeOAuthClientProvider` implements `OAuthClientProvider`, owns the
+    loopback callback server (preferred port 33418, walks up to 33427 on
+    conflict, persisted across runs), and exposes `getAuthorizationCode()`
+    for the orchestrator pattern in `useMcp.ts`.
+  - `FileKVStore` writes tokens, client info, and code verifiers to one file
+    per key under `~/.mcp-use/oauth/<urlHash>/` with `0o600` perms and atomic
+    rename on write.
+
+  New on `@mcp-use/cli`:
+  - `mcp-use client connect <url>` auto-runs OAuth on `UnauthorizedError`
+    when no `--auth` is supplied. New flags: `--no-oauth`, `--auth-timeout`.
+  - `mcp-use client auth status|refresh|logout [session]` for token
+    introspection, forced refresh, and revocation. (No `auth login` — that's
+    what `connect` is for.)
+  - Follow-up commands (`tools list`, etc.) on OAuth sessions transparently
+    refresh expiring JWTs. If the refresh token itself is dead, the CLI
+    prompts to re-auth on TTY or prints the exact `connect` command to run
+    on non-TTY.
+
+### Patch Changes
+
+- 46caf80: Remove unused dependencies and devDependencies flagged by `knip`.
+  - Root: drop `lint-staged` and `typescript-eslint` (unused; ESLint config uses `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` directly, and Husky pre-commit runs `pnpm format`/`lint:fix` directly without lint-staged). Removed the stale root `lint-staged` config block.
+  - `@mcp-use/cli`: drop `globby`, `ws`, `@types/ws` (no source references; `globby` was explicitly replaced by Node built-ins). Removed `globby` from `tsup.config.ts` `noExternal`.
+  - `create-mcp-use-app`: drop `fs-extra` and `@types/fs-extra` (no source references).
+  - `mcp-use`: drop `ws`, `@types/ws`, `@antfu/eslint-config`, `@langchain/anthropic` (devDep — already an optional peer; only referenced as a string for dynamic import), `eslint-plugin-format`, `lint-staged`. Removed the stale package-level `lint-staged` config block.
+  - `knip.json`: ignore `@mcp-use/inspector` for the `cli` package (resolved dynamically via `createRequire().resolve` to read its `package.json`).
+
+  `pnpm knip:deps` now reports 0 unused (dev)dependencies. `pnpm install --frozen-lockfile`, `pnpm lint`, and `pnpm build` all succeed.
+
+- 46caf80: Updated dependency `next` to `^15.5.18`.
+- 46caf80: Make `mcp-use/server` response helpers discoverable to humans and coding agents.
+  - **`MCPServer.tool()` JSDoc**: each `@example` block now includes the matching `import { ... } from "mcp-use/server"` line, plus a note that helpers (`text`, `object`, `image`, `markdown`, `html`, `error`, `widget`, …) are exported from `mcp-use/server`. Previously the examples called `text(...)` / `error(...)` with no import, so anyone reading the hover doc had no breadcrumb to the package.
+  - **`create-mcp-use-app` blank template**: the commented tool/resource/prompt blocks previously called `text(...)`, `object(...)`, and `z.object(...)` without showing where any of those came from — and the file's top-level imports never referenced them either. Each commented block now includes the relevant `import { ... } from "mcp-use/server"` / `import { z } from "zod"` lines inside the comment, alongside a leading note naming the available response helpers. The template stays truly blank (no tools registered) but the discovery path is now local to the file.
+
+- 46caf80: fix(auth): make `forceRefresh()` actually exchange the refresh_token, and escape HTML in the loopback failure page
+  - `NodeOAuthClientProvider.forceRefresh()` now delegates to a new
+    `OAuthSessionStore.forceRefresh()` that calls the existing dedup'd
+    refresh path directly. The previous implementation tried to coerce a
+    refresh by zeroing out `access_token` and re-reading via `tokens()`,
+    but `tokens()` gates the refresh path on a truthy `access_token`, so
+    no network call was ever made and the stale tokens were returned. This
+    is what `mcp-use client auth refresh` runs.
+  - The loopback failure page (rendered when the OAuth server redirects
+    back with `?error=…`) now HTML-escapes both the `error` code and
+    `error_description` rather than only stripping `<>&` from the
+    description. Closes a low-severity reflected-XSS in the localhost
+    callback page.
+
+- 46caf80: fix(auth): handle SDK-initiated OAuth redirect on 401 in CLI connect
+
+  The SDK's `StreamableHTTPClientTransport` auto-calls `auth()` on a 401, which
+  in turn calls our `redirectToAuthorization()` — binding the loopback and
+  opening the browser before the transport throws. Two fixes so the CLI's
+  `connect` command picks up where the SDK left off instead of dying:
+  - `NodeOAuthClientProvider` exposes `hasPendingFlow` so orchestrators can
+    detect that the SDK already kicked off the flow and skip straight to
+    `getAuthorizationCode()` (calling `auth()` again would throw "an
+    authorization is already in progress").
+  - `mcp-use client connect`'s `runOAuthFlow` uses `hasPendingFlow` to skip
+    the duplicate `auth()` call, and `isUnauthorized` now also matches the
+    rewrapped 401 that `HttpConnector` throws (plain `Error` with `code = 401`).
+
+  Without these, the first connect to an OAuth-protected server printed
+  "Authentication required" and `process.exit(1)`'d before the browser
+  callback returned — leaving the user staring at a "connection refused"
+  loopback page.
+
+- 46caf80: refactor(auth): extract `OAuthSessionStore` helper from `BrowserOAuthClientProvider`
+
+  Pulls token storage, JWT-expiry-driven refresh (with deduplication),
+  client-info validation, code-verifier handling, key hashing, and generic
+  authorization-state persistence into a new platform-neutral
+  `OAuthSessionStore` helper parameterized over a `KVStore`. The browser
+  provider now holds an `OAuthSessionStore` and delegates the SDK
+  `OAuthClientProvider` interface methods to it. No behavior change —
+  this prepares the ground for a future Node/CLI OAuth provider.
+
+- 46caf80: Resolved duplicate exports flagged by Knip.
+  - Annotated the `Tel` alias for `Telemetry` with the `@alias` directive so Knip no longer flags it as a duplicate export. The alias remains available for consumers.
+  - Unified the canonical source path for `Telemetry`, `Tel`, `setTelemetrySource`, and `isBrowserEnvironment` in `src/telemetry/index.ts`. The Node implementation is now the default and is swapped for the browser implementation in browser bundles via the existing tsup substitution plugin.
+  - Removed the redundant default export of `JsonRpcLoggerView` in `@mcp-use/inspector`. The named export is unchanged.
+
+- 46caf80: Declare `jsdom` and `@vitest/coverage-v8` as explicit devDependencies (resolves `pnpm knip` unlisted-dependency warnings). `@vitest/coverage-v8` is pinned to `~4.0.18` to match the installed `vitest` and satisfy its exact peer-dep constraint.
+- 46caf80: feat(server): print a one-line hint on startup pointing devs at the
+  `mcp-use client connect <url>` CLI. Appears in dim gray right after
+  the existing `[SERVER] Listening` / `[MCP] Endpoints` lines.
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+  - @mcp-use/cli@3.2.0
+  - @mcp-use/inspector@6.0.0
+
+## 1.28.0-canary.15
+
+### Patch Changes
+
+- Updated dependencies [c3da11e]
+  - @mcp-use/cli@3.2.0-canary.15
+  - @mcp-use/inspector@6.0.0-canary.15
+
+## 1.28.0-canary.14
+
+### Patch Changes
+
+- Updated dependencies [e124d58]
+  - @mcp-use/cli@3.2.0-canary.14
+  - @mcp-use/inspector@6.0.0-canary.14
+
+## 1.28.0-canary.13
+
+### Patch Changes
+
+- Updated dependencies [03612f1]
+  - @mcp-use/cli@3.2.0-canary.13
+  - @mcp-use/inspector@6.0.0-canary.13
+
+## 1.28.0-canary.12
+
+### Patch Changes
+
+- Updated dependencies [2ef0a90]
+  - @mcp-use/cli@3.2.0-canary.12
+  - @mcp-use/inspector@6.0.0-canary.12
+
+## 1.28.0-canary.11
+
+### Patch Changes
+
+- Updated dependencies [fb50dbb]
+  - @mcp-use/cli@3.2.0-canary.11
+  - @mcp-use/inspector@6.0.0-canary.11
+
+## 1.28.0-canary.10
+
+### Patch Changes
+
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+- Updated dependencies [64f74d2]
+  - @mcp-use/cli@3.2.0-canary.10
+  - @mcp-use/inspector@6.0.0-canary.10
+
+## 1.28.0-canary.9
+
+### Patch Changes
+
+- Updated dependencies [4cc5436]
+  - @mcp-use/inspector@6.0.0-canary.9
+  - @mcp-use/cli@3.2.0-canary.9
+
+## 1.28.0-canary.8
+
+### Patch Changes
+
+- Updated dependencies [77b2a04]
+  - @mcp-use/cli@3.2.0-canary.8
+  - @mcp-use/inspector@6.0.0-canary.8
+
+## 1.28.0-canary.7
+
+### Patch Changes
+
+- 097f57c: Resolved duplicate exports flagged by Knip.
+  - Annotated the `Tel` alias for `Telemetry` with the `@alias` directive so Knip no longer flags it as a duplicate export. The alias remains available for consumers.
+  - Unified the canonical source path for `Telemetry`, `Tel`, `setTelemetrySource`, and `isBrowserEnvironment` in `src/telemetry/index.ts`. The Node implementation is now the default and is swapped for the browser implementation in browser bundles via the existing tsup substitution plugin.
+  - Removed the redundant default export of `JsonRpcLoggerView` in `@mcp-use/inspector`. The named export is unchanged.
+
+- Updated dependencies [097f57c]
+  - @mcp-use/inspector@6.0.0-canary.7
+  - @mcp-use/cli@3.2.0-canary.7
+
+## 1.28.0-canary.6
+
+### Patch Changes
+
+- Updated dependencies [ce16171]
+  - @mcp-use/cli@3.2.0-canary.6
+  - @mcp-use/inspector@6.0.0-canary.6
+
+## 1.28.0-canary.5
+
+### Minor Changes
+
+- 25a906a: feat(auth): Node OAuth client provider + CLI OAuth flow
+
+  Adds a real OAuth flow to the `mcp-use` CLI. `mcp-use client connect <url>`
+  against an OAuth-protected MCP server now opens a browser, captures the
+  authorization code via a localhost loopback, persists tokens to
+  `~/.mcp-use/oauth/<urlHash>/`, and silently refreshes them on subsequent
+  commands — no flag plumbing.
+
+  New on `mcp-use`:
+  - `mcp-use/auth/node` entrypoint exporting `NodeOAuthClientProvider`,
+    `FileKVStore`, the `KVStore` type, and re-exporting the SDK's `auth` and
+    `UnauthorizedError`.
+  - `NodeOAuthClientProvider` implements `OAuthClientProvider`, owns the
+    loopback callback server (preferred port 33418, walks up to 33427 on
+    conflict, persisted across runs), and exposes `getAuthorizationCode()`
+    for the orchestrator pattern in `useMcp.ts`.
+  - `FileKVStore` writes tokens, client info, and code verifiers to one file
+    per key under `~/.mcp-use/oauth/<urlHash>/` with `0o600` perms and atomic
+    rename on write.
+
+  New on `@mcp-use/cli`:
+  - `mcp-use client connect <url>` auto-runs OAuth on `UnauthorizedError`
+    when no `--auth` is supplied. New flags: `--no-oauth`, `--auth-timeout`.
+  - `mcp-use client auth status|refresh|logout [session]` for token
+    introspection, forced refresh, and revocation. (No `auth login` — that's
+    what `connect` is for.)
+  - Follow-up commands (`tools list`, etc.) on OAuth sessions transparently
+    refresh expiring JWTs. If the refresh token itself is dead, the CLI
+    prompts to re-auth on TTY or prints the exact `connect` command to run
+    on non-TTY.
+
+### Patch Changes
+
+- 25a906a: fix(auth): make `forceRefresh()` actually exchange the refresh_token, and escape HTML in the loopback failure page
+  - `NodeOAuthClientProvider.forceRefresh()` now delegates to a new
+    `OAuthSessionStore.forceRefresh()` that calls the existing dedup'd
+    refresh path directly. The previous implementation tried to coerce a
+    refresh by zeroing out `access_token` and re-reading via `tokens()`,
+    but `tokens()` gates the refresh path on a truthy `access_token`, so
+    no network call was ever made and the stale tokens were returned. This
+    is what `mcp-use client auth refresh` runs.
+  - The loopback failure page (rendered when the OAuth server redirects
+    back with `?error=…`) now HTML-escapes both the `error` code and
+    `error_description` rather than only stripping `<>&` from the
+    description. Closes a low-severity reflected-XSS in the localhost
+    callback page.
+
+- 25a906a: fix(auth): handle SDK-initiated OAuth redirect on 401 in CLI connect
+
+  The SDK's `StreamableHTTPClientTransport` auto-calls `auth()` on a 401, which
+  in turn calls our `redirectToAuthorization()` — binding the loopback and
+  opening the browser before the transport throws. Two fixes so the CLI's
+  `connect` command picks up where the SDK left off instead of dying:
+  - `NodeOAuthClientProvider` exposes `hasPendingFlow` so orchestrators can
+    detect that the SDK already kicked off the flow and skip straight to
+    `getAuthorizationCode()` (calling `auth()` again would throw "an
+    authorization is already in progress").
+  - `mcp-use client connect`'s `runOAuthFlow` uses `hasPendingFlow` to skip
+    the duplicate `auth()` call, and `isUnauthorized` now also matches the
+    rewrapped 401 that `HttpConnector` throws (plain `Error` with `code = 401`).
+
+  Without these, the first connect to an OAuth-protected server printed
+  "Authentication required" and `process.exit(1)`'d before the browser
+  callback returned — leaving the user staring at a "connection refused"
+  loopback page.
+
+- 25a906a: feat(server): print a one-line hint on startup pointing devs at the
+  `mcp-use client connect <url>` CLI. Appears in dim gray right after
+  the existing `[SERVER] Listening` / `[MCP] Endpoints` lines.
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+  - @mcp-use/cli@3.2.0-canary.5
+  - @mcp-use/inspector@6.0.0-canary.5
+
+## 1.27.2-canary.4
+
+### Patch Changes
+
+- dc71f7f: refactor(auth): extract `OAuthSessionStore` helper from `BrowserOAuthClientProvider`
+
+  Pulls token storage, JWT-expiry-driven refresh (with deduplication),
+  client-info validation, code-verifier handling, key hashing, and generic
+  authorization-state persistence into a new platform-neutral
+  `OAuthSessionStore` helper parameterized over a `KVStore`. The browser
+  provider now holds an `OAuthSessionStore` and delegates the SDK
+  `OAuthClientProvider` interface methods to it. No behavior change —
+  this prepares the ground for a future Node/CLI OAuth provider.
+  - @mcp-use/cli@3.1.5-canary.4
+  - @mcp-use/inspector@5.0.2-canary.4
+
+## 1.27.2-canary.3
+
+### Patch Changes
+
+- 5bb6d47: Declare `jsdom` and `@vitest/coverage-v8` as explicit devDependencies (resolves `pnpm knip` unlisted-dependency warnings). `@vitest/coverage-v8` is pinned to `~4.0.18` to match the installed `vitest` and satisfy its exact peer-dep constraint.
+  - @mcp-use/cli@3.1.5-canary.3
+  - @mcp-use/inspector@5.0.2-canary.3
+
+## 1.27.2-canary.2
+
+### Patch Changes
+
+- 79a3f4c: Make `mcp-use/server` response helpers discoverable to humans and coding agents.
+  - **`MCPServer.tool()` JSDoc**: each `@example` block now includes the matching `import { ... } from "mcp-use/server"` line, plus a note that helpers (`text`, `object`, `image`, `markdown`, `html`, `error`, `widget`, …) are exported from `mcp-use/server`. Previously the examples called `text(...)` / `error(...)` with no import, so anyone reading the hover doc had no breadcrumb to the package.
+  - **`create-mcp-use-app` blank template**: the commented tool/resource/prompt blocks previously called `text(...)`, `object(...)`, and `z.object(...)` without showing where any of those came from — and the file's top-level imports never referenced them either. Each commented block now includes the relevant `import { ... } from "mcp-use/server"` / `import { z } from "zod"` lines inside the comment, alongside a leading note naming the available response helpers. The template stays truly blank (no tools registered) but the discovery path is now local to the file.
+  - @mcp-use/cli@3.1.5-canary.2
+  - @mcp-use/inspector@5.0.2-canary.2
+
+## 1.27.2-canary.1
+
+### Patch Changes
+
+- 2810bf6: Remove unused dependencies and devDependencies flagged by `knip`.
+  - Root: drop `lint-staged` and `typescript-eslint` (unused; ESLint config uses `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` directly, and Husky pre-commit runs `pnpm format`/`lint:fix` directly without lint-staged). Removed the stale root `lint-staged` config block.
+  - `@mcp-use/cli`: drop `globby`, `ws`, `@types/ws` (no source references; `globby` was explicitly replaced by Node built-ins). Removed `globby` from `tsup.config.ts` `noExternal`.
+  - `create-mcp-use-app`: drop `fs-extra` and `@types/fs-extra` (no source references).
+  - `mcp-use`: drop `ws`, `@types/ws`, `@antfu/eslint-config`, `@langchain/anthropic` (devDep — already an optional peer; only referenced as a string for dynamic import), `eslint-plugin-format`, `lint-staged`. Removed the stale package-level `lint-staged` config block.
+  - `knip.json`: ignore `@mcp-use/inspector` for the `cli` package (resolved dynamically via `createRequire().resolve` to read its `package.json`).
+
+  `pnpm knip:deps` now reports 0 unused (dev)dependencies. `pnpm install --frozen-lockfile`, `pnpm lint`, and `pnpm build` all succeed.
+
+- Updated dependencies [2810bf6]
+  - @mcp-use/cli@3.1.5-canary.1
+  - @mcp-use/inspector@5.0.2-canary.1
+
+## 1.27.2-canary.0
+
+### Patch Changes
+
+- 549f50c: Updated dependency `next` to `^15.5.18`.
+  - @mcp-use/cli@3.1.5-canary.0
+  - @mcp-use/inspector@5.0.2-canary.0
+
+## 1.27.1
+
+### Patch Changes
+
+- ca1b34f: Forward `outputSchema` from tool definitions into the MCP SDK so `tools/list` exposes output JSON Schema for clients (e.g. ChatGPT App Store validation).
+- Updated dependencies [ca1b34f]
+  - @mcp-use/inspector@5.0.1
+  - @mcp-use/cli@3.1.4
+
+## 1.27.1-canary.1
+
+### Patch Changes
+
+- Updated dependencies [25a8745]
+  - @mcp-use/inspector@5.0.1-canary.1
+  - @mcp-use/cli@3.1.4-canary.1
+
+## 1.27.1-canary.0
+
+### Patch Changes
+
+- c40cd03: Forward `outputSchema` from tool definitions into the MCP SDK so `tools/list` exposes output JSON Schema for clients (e.g. ChatGPT App Store validation).
+  - @mcp-use/cli@3.1.4-canary.0
+  - @mcp-use/inspector@5.0.1-canary.0
+
+## 1.27.0
+
+### Minor Changes
+
+- 78cfc8a: feat(mcp-use): add Clerk OAuth provider
+
+  Adds `oauthClerkProvider` for using Clerk as an OAuth authorization
+  server in MCP servers. Uses DCR-direct mode — MCP clients register and
+  authenticate directly with Clerk, and the MCP server verifies
+  Clerk-issued JWTs via JWKS.
+
+  Default scopes are `["profile", "email", "offline_access"]`. The
+  `openid` scope is excluded by default because it requires OIDC to be
+  explicitly enabled in the Clerk Dashboard; users who need it can pass
+  `scopesSupported: ["openid", "profile", "email", "offline_access"]`.
+
+- 78cfc8a: Add support for pre-registered OAuth client IDs (proxy mode), including optional client secrets for confidential clients.
+
+  `UseMcpOptions` / `McpServerOptions` now accept an `oauth: { clientId?, clientSecret?, scope? }` field. When `clientId` is provided, `BrowserOAuthClientProvider` returns it from `clientInformation()` so the SDK skips Dynamic Client Registration — required for MCP servers that proxy through providers like Slack or WorkOS, which strip `registration_endpoint` from metadata. When `clientSecret` is also provided, the SDK auto-switches token-endpoint auth from `none` to `client_secret_basic`/`client_secret_post`, which is useful for providers that don't support PKCE. `scope` is forwarded as `clientMetadata.scope`.
+
+  The Inspector's Authentication dialog now has `Client ID`, `Client Secret`, and `Scope` fields, all wired through `addServer` / `updateServer`.
+
+### Patch Changes
+
+- 78cfc8a: fix(inspector): honor `MCP_USE_ANONYMIZED_TELEMETRY=false` for the
+  in-browser `useMcp` posthog-js init.
+
+  Previously the env var only disabled Node-side telemetry and the
+  inspector's server-side proxy. The `useMcp` React hook still
+  initialized `posthog-js` directly in the browser, sending events to
+  `https://eu.i.posthog.com` that ad/tracker blockers would flag.
+
+  The inspector server now mirrors the env var into a per-page runtime
+  flag (`window.__MCP_USE_ANONYMIZED_TELEMETRY__`) before the client
+  bundle runs; both `mcp-use`'s browser telemetry and the inspector's
+  own client telemetry honor that flag, so a single env var disables
+  every telemetry path. The flag is page-scoped — it leaves no
+  persistent state, so unsetting the env var fully restores defaults on
+  the next page load. Default behavior (telemetry on) is unchanged.
+
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+  - @mcp-use/cli@3.1.3
+  - @mcp-use/inspector@5.0.0
+
+## 1.27.0-canary.5
+
+### Patch Changes
+
+- 02c8e2d: fix(inspector): honor `MCP_USE_ANONYMIZED_TELEMETRY=false` for the
+  in-browser `useMcp` posthog-js init.
+
+  Previously the env var only disabled Node-side telemetry and the
+  inspector's server-side proxy. The `useMcp` React hook still
+  initialized `posthog-js` directly in the browser, sending events to
+  `https://eu.i.posthog.com` that ad/tracker blockers would flag.
+
+  The inspector server now mirrors the env var into a per-page runtime
+  flag (`window.__MCP_USE_ANONYMIZED_TELEMETRY__`) before the client
+  bundle runs; both `mcp-use`'s browser telemetry and the inspector's
+  own client telemetry honor that flag, so a single env var disables
+  every telemetry path. The flag is page-scoped — it leaves no
+  persistent state, so unsetting the env var fully restores defaults on
+  the next page load. Default behavior (telemetry on) is unchanged.
+
+- Updated dependencies [02c8e2d]
+  - @mcp-use/inspector@5.0.0-canary.5
+  - @mcp-use/cli@3.1.3-canary.5
+
+## 1.27.0-canary.4
+
+### Minor Changes
+
+- afbfa92: Add support for pre-registered OAuth client IDs (proxy mode), including optional client secrets for confidential clients.
+
+  `UseMcpOptions` / `McpServerOptions` now accept an `oauth: { clientId?, clientSecret?, scope? }` field. When `clientId` is provided, `BrowserOAuthClientProvider` returns it from `clientInformation()` so the SDK skips Dynamic Client Registration — required for MCP servers that proxy through providers like Slack or WorkOS, which strip `registration_endpoint` from metadata. When `clientSecret` is also provided, the SDK auto-switches token-endpoint auth from `none` to `client_secret_basic`/`client_secret_post`, which is useful for providers that don't support PKCE. `scope` is forwarded as `clientMetadata.scope`.
+
+  The Inspector's Authentication dialog now has `Client ID`, `Client Secret`, and `Scope` fields, all wired through `addServer` / `updateServer`.
+
+### Patch Changes
+
+- Updated dependencies [afbfa92]
+  - @mcp-use/inspector@5.0.0-canary.4
+  - @mcp-use/cli@3.1.3-canary.4
+
+## 1.27.0-canary.3
+
+### Patch Changes
+
+- Updated dependencies [870983e]
+  - @mcp-use/inspector@5.0.0-canary.3
+  - @mcp-use/cli@3.1.3-canary.3
+
+## 1.27.0-canary.2
+
+### Patch Changes
+
+- Updated dependencies [8b4f674]
+  - @mcp-use/inspector@5.0.0-canary.2
+  - @mcp-use/cli@3.1.3-canary.2
+
+## 1.27.0-canary.1
+
+### Patch Changes
+
+- Updated dependencies [6229097]
+  - @mcp-use/cli@3.1.3-canary.1
+  - @mcp-use/inspector@5.0.0-canary.1
+
+## 1.27.0-canary.0
+
+### Minor Changes
+
+- 1633518: feat(mcp-use): add Clerk OAuth provider
+
+  Adds `oauthClerkProvider` for using Clerk as an OAuth authorization
+  server in MCP servers. Uses DCR-direct mode — MCP clients register and
+  authenticate directly with Clerk, and the MCP server verifies
+  Clerk-issued JWTs via JWKS.
+
+  Default scopes are `["profile", "email", "offline_access"]`. The
+  `openid` scope is excluded by default because it requires OIDC to be
+  explicitly enabled in the Clerk Dashboard; users who need it can pass
+  `scopesSupported: ["openid", "profile", "email", "offline_access"]`.
+
+### Patch Changes
+
+- @mcp-use/cli@3.1.3-canary.0
+- @mcp-use/inspector@5.0.0-canary.0
+
+## 1.26.0
+
+### Minor Changes
+
+- bdf9182: feat(server): add `MCP_DEBUG_LEVEL` env var with `info` / `debug` / `trace` levels for HTTP request logs
+
+  Replaces the previous all-or-nothing `DEBUG=1` behavior with three explicit verbosity levels:
+  - `info` (default): one compact line per request, e.g.
+    `[19:44:56] POST /mcp [tools/call: greet] OK (1ms)`. Initialize lines now include the client `name/version` and the new short session id (`→ session=92c4e0b`); subsequent requests are prefixed with `sess=<short>`. JSON-RPC and tool errors are extracted from the response body and shown inline (`ERROR cannot divide by zero`).
+  - `debug`: same as `info` plus inline `args=<json>` for `tools/call`.
+  - `trace`: identical to the legacy `DEBUG=1` output (full request/response headers and bodies).
+
+  `DEBUG=1` (or any truthy `DEBUG` value) continues to work and maps to `trace`. Internal "Session initialized"/"Session closed" log lines are now suppressed at `info` level, since the per-request log line already conveys that information.
+
+### Patch Changes
+
+- bdf9182: fix(widgets): pre-warm widget Vite entries before registration to prevent first-render `/.vite/deps/*` 504s
+
+  When a widget is registered (initial boot, watcher add-file, or watcher add-folder), `mount-widgets-dev` now calls `viteServer.warmupRequest()` followed by `viteServer.waitForRequestsIdle()` for the widget's `entry.tsx` before exposing it to the inspector. This forces Vite's `depsOptimizer` to finish pre-bundling and stabilise its dependency hash before the browser starts requesting `/.vite/deps/*` modules.
+
+  Previously, the inspector iframe could fetch optimized dependencies (e.g. `mcp-use_react.js`) with a stale Vite hash while `depsOptimizer` was still re-bundling, which surfaced as `504 Gateway Timeout` errors and a blank widget on first interaction in Vibe-created sandboxes. Each widget is warmed at most once per dev-server lifetime; failures fall back to a warning so registration never blocks.
+  - @mcp-use/cli@3.1.2
+  - @mcp-use/inspector@4.0.0
+
+## 1.26.0-canary.1
+
+### Minor Changes
+
+- 1b70559: feat(server): add `MCP_DEBUG_LEVEL` env var with `info` / `debug` / `trace` levels for HTTP request logs
+
+  Replaces the previous all-or-nothing `DEBUG=1` behavior with three explicit verbosity levels:
+  - `info` (default): one compact line per request, e.g.
+    `[19:44:56] POST /mcp [tools/call: greet] OK (1ms)`. Initialize lines now include the client `name/version` and the new short session id (`→ session=92c4e0b`); subsequent requests are prefixed with `sess=<short>`. JSON-RPC and tool errors are extracted from the response body and shown inline (`ERROR cannot divide by zero`).
+  - `debug`: same as `info` plus inline `args=<json>` for `tools/call`.
+  - `trace`: identical to the legacy `DEBUG=1` output (full request/response headers and bodies).
+
+  `DEBUG=1` (or any truthy `DEBUG` value) continues to work and maps to `trace`. Internal "Session initialized"/"Session closed" log lines are now suppressed at `info` level, since the per-request log line already conveys that information.
+
+### Patch Changes
+
+- @mcp-use/cli@3.1.2-canary.1
+- @mcp-use/inspector@4.0.0-canary.1
+
+## 1.25.2-canary.0
+
+### Patch Changes
+
+- 2636f32: fix(widgets): pre-warm widget Vite entries before registration to prevent first-render `/.vite/deps/*` 504s
+
+  When a widget is registered (initial boot, watcher add-file, or watcher add-folder), `mount-widgets-dev` now calls `viteServer.warmupRequest()` followed by `viteServer.waitForRequestsIdle()` for the widget's `entry.tsx` before exposing it to the inspector. This forces Vite's `depsOptimizer` to finish pre-bundling and stabilise its dependency hash before the browser starts requesting `/.vite/deps/*` modules.
+
+  Previously, the inspector iframe could fetch optimized dependencies (e.g. `mcp-use_react.js`) with a stale Vite hash while `depsOptimizer` was still re-bundling, which surfaced as `504 Gateway Timeout` errors and a blank widget on first interaction in Vibe-created sandboxes. Each widget is warmed at most once per dev-server lifetime; failures fall back to a warning so registration never blocks.
+  - @mcp-use/cli@3.1.2-canary.0
+  - @mcp-use/inspector@3.0.2-canary.0
+
+## 1.25.1
+
+### Patch Changes
+
+- 806dbca: Fix OAuth error handling to redirect back to inspector instead of showing raw error page. When OAuth callback receives an error (e.g. user denies access), the callback now looks up the stored state first to retrieve the returnUrl, then redirects back to the inspector with error parameters instead of immediately throwing and displaying a raw error page with stack traces. The inspector surfaces these errors as a persistent App-level toast that fires regardless of the active route.
+- 806dbca: Fix Supabase OAuth provider to use OAuth 2.1 server endpoints
+
+  `SupabaseOAuthProvider.getAuthEndpoint()` and `getTokenEndpoint()` now return `/auth/v1/oauth/authorize` and `/auth/v1/oauth/token` — the OAuth 2.1 server paths — instead of the legacy `/auth/v1/authorize` and `/auth/v1/token`. Metadata discovery and JWT verification were already correct, so most DCR-direct clients weren't affected, but any code path that consulted the provider's endpoint getters was pointed at the wrong URLs.
+
+  Also clarifies the Supabase provider docs: adds a `<Steps>` prerequisites block (enable OAuth Server, allow dynamic OAuth apps, set consent URL, pick a sign-in method) and notes that `MCP_USE_OAUTH_SUPABASE_PUBLISHABLE_KEY` is used by your consent UI and Supabase SDK calls — the provider itself only needs the project ID.
+
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+  - @mcp-use/inspector@3.0.1
+  - @mcp-use/cli@3.1.1
+
+## 1.25.1-canary.8
+
+### Patch Changes
+
+- Updated dependencies [d62850e]
+  - @mcp-use/inspector@3.0.1-canary.8
+  - @mcp-use/cli@3.1.1-canary.8
+
+## 1.25.1-canary.7
+
+### Patch Changes
+
+- dd0ec5f: Fix Supabase OAuth provider to use OAuth 2.1 server endpoints
+
+  `SupabaseOAuthProvider.getAuthEndpoint()` and `getTokenEndpoint()` now return `/auth/v1/oauth/authorize` and `/auth/v1/oauth/token` — the OAuth 2.1 server paths — instead of the legacy `/auth/v1/authorize` and `/auth/v1/token`. Metadata discovery and JWT verification were already correct, so most DCR-direct clients weren't affected, but any code path that consulted the provider's endpoint getters was pointed at the wrong URLs.
+
+  Also clarifies the Supabase provider docs: adds a `<Steps>` prerequisites block (enable OAuth Server, allow dynamic OAuth apps, set consent URL, pick a sign-in method) and notes that `MCP_USE_OAUTH_SUPABASE_PUBLISHABLE_KEY` is used by your consent UI and Supabase SDK calls — the provider itself only needs the project ID.
+  - @mcp-use/cli@3.1.1-canary.7
+  - @mcp-use/inspector@3.0.1-canary.7
+
+## 1.25.1-canary.6
+
+### Patch Changes
+
+- Updated dependencies [47b446e]
+  - @mcp-use/inspector@3.0.1-canary.6
+  - @mcp-use/cli@3.1.1-canary.6
+
+## 1.25.1-canary.5
+
+### Patch Changes
+
+- c1ea21a: Fix OAuth error handling to redirect back to inspector instead of showing raw error page. When OAuth callback receives an error (e.g. user denies access), the callback now looks up the stored state first to retrieve the returnUrl, then redirects back to the inspector with error parameters instead of immediately throwing and displaying a raw error page with stack traces. The inspector surfaces these errors as a persistent App-level toast that fires regardless of the active route.
+- Updated dependencies [c1ea21a]
+  - @mcp-use/inspector@3.0.1-canary.5
+  - @mcp-use/cli@3.1.1-canary.5
+
+## 1.25.1-canary.4
+
+### Patch Changes
+
+- Updated dependencies [37a217c]
+  - @mcp-use/cli@3.1.1-canary.4
+  - @mcp-use/inspector@3.0.1-canary.4
+
+## 1.25.1-canary.3
+
+### Patch Changes
+
+- Updated dependencies [f41869b]
+  - @mcp-use/inspector@3.0.1-canary.3
+  - @mcp-use/cli@3.1.1-canary.3
+
+## 1.25.1-canary.2
+
+### Patch Changes
+
+- Updated dependencies [dfe35fa]
+  - @mcp-use/inspector@3.0.1-canary.2
+  - @mcp-use/cli@3.1.1-canary.2
+
+## 1.25.1-canary.1
+
+### Patch Changes
+
+- Updated dependencies [7f4e99d]
+  - @mcp-use/cli@3.1.1-canary.1
+  - @mcp-use/inspector@3.0.1-canary.1
+
+## 1.25.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [c864134]
+- Updated dependencies [a59476b]
+  - @mcp-use/inspector@3.0.1-canary.0
+  - @mcp-use/cli@3.1.1-canary.0
+
 ## 1.25.0
 
 ### Minor Changes

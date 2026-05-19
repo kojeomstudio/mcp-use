@@ -1,5 +1,474 @@
 # @mcp-use/inspector
 
+## 6.0.0
+
+### Minor Changes
+
+- 46caf80: feat(cli, inspector): add `mcp-use screenshot` for visual feedback loops on MCP Apps views (MCP-1566)
+
+  `mcp-use screenshot --tool <name> key=value [key2=value2 ...]` calls the tool and renders the result headlessly, saving a PNG of the resulting view. Use `key:=<json>` for nested values, or pass a single JSON object for the legacy form.
+
+  The CLI always spawns a fresh `@mcp-use/inspector` standalone server on a free port (no reuse of whatever happens to be on `localhost:3000`, which could be an unrelated Vite/dev server) and tears it down on exit. It drives the user's existing Chrome / Chromium / Edge / Brave install via the Chrome DevTools Protocol at the new chromeless `/inspector/preview/:view` route inside the inspector SPA. Pass `--inspector <url>` to point at an existing inspector instance; the URL is probed strictly (must return `{ status: "ok" }` JSON on `/inspector/health`) so unrelated servers can't be misidentified. The screenshot pipeline no longer requires being in a project with an MCP server entry — any directory works. Output defaults to `./<view>-<timestamp>.png` in cwd.
+
+  No additional install step or peer dependency is required — the command uses your system Chrome. The browser path is auto-detected on macOS / Linux / Windows; override with `MCP_USE_CHROME_PATH`, `PUPPETEER_EXECUTABLE_PATH`, or `CHROME_PATH` if needed.
+
+  The inspector exposes a new internal `<ViewPreview>` component and a `/preview/:view` client-side route. `MCPAppsRenderer` gains an optional `onReady` callback used by the preview route to drive the readiness signal (`body[data-view-ready="true"]`) that the screenshot command waits for before capturing.
+
+  **Session-aware authentication.** Screenshot now reuses sessions saved by `mcp-use client connect`, so a single OAuth flow covers every subsequent screenshot of that server. Replace `--auth <token>` with `--session <name>` (defaults to the active session); `--mcp <url>` remains as an unauthenticated escape hatch. The OAuth token never enters the browser — the CLI calls the tool, reads the widget resource, and injects the result into Chrome via CDP `Page.addScriptToEvaluateOnNewDocument` (as `globalThis.__mcpUsePreviewBundle`). The preview route detects the global and renders inline, skipping the browser-side MCP connection entirely.
+
+  **Breaking:** `mcp-use screenshot` flags `--auth` and `--header` are removed. Use `mcp-use client connect <url> --name <name>` (with OAuth) once, then `mcp-use screenshot --tool <name>`.
+
+  **Auto-screenshot in `client tools call`.** When `mcp-use client tools call <name>` invokes a tool that declares a UI resource (`_meta.ui.resourceUri` or `openai/outputTemplate`), the CLI now automatically captures a widget screenshot using the same pipeline as `mcp-use screenshot`. The tool result is reused (no double tool-call) and the dev server is auto-spawned if needed. Pass `--no-screenshot` to opt out, or `--screenshot-output <path>` to override the default `./<view>-<timestamp>.png` path. Screenshot failures print a warning but don't fail the tool call.
+
+  **Remote browser via `--cdp-url`.** `mcp-use screenshot` now accepts `--cdp-url <ws-or-wss-url>` to connect to an existing Chrome DevTools Protocol endpoint instead of spawning local Chrome. Useful for hosted Chromium providers (e.g. Notte) so the screenshot pipeline can run in sandboxes without a local browser install. When `--cdp-url` is set, the CLI skips Chrome resolution entirely and uses `Target.setAutoAttach` (rather than the local path's explicit `Target.attachToTarget`, which some hosted providers forbid) to pick up the existing page session. Combine with `--inspector <url>` pointing at a publicly reachable preview deployment so the remote browser can load the widget bundle. The local-Chrome path is unchanged when `--cdp-url` is omitted.
+
+### Patch Changes
+
+- 46caf80: Improve dark mode scrollbar styling and hover visibility in the Inspector UI.
+- 46caf80: Resolved duplicate exports flagged by Knip.
+  - Annotated the `Tel` alias for `Telemetry` with the `@alias` directive so Knip no longer flags it as a duplicate export. The alias remains available for consumers.
+  - Unified the canonical source path for `Telemetry`, `Tel`, `setTelemetrySource`, and `isBrowserEnvironment` in `src/telemetry/index.ts`. The Node implementation is now the default and is swapped for the browser implementation in browser bundles via the existing tsup substitution plugin.
+  - Removed the redundant default export of `JsonRpcLoggerView` in `@mcp-use/inspector`. The named export is unchanged.
+
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+- Updated dependencies [46caf80]
+  - mcp-use@1.28.0
+
+## 6.0.0-canary.15
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.15
+
+## 6.0.0-canary.14
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.14
+
+## 6.0.0-canary.13
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.13
+
+## 6.0.0-canary.12
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.12
+
+## 6.0.0-canary.11
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.11
+
+## 6.0.0-canary.10
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.10
+
+## 6.0.0-canary.9
+
+### Patch Changes
+
+- 4cc5436: Improve dark mode scrollbar styling and hover visibility in the Inspector UI.
+  - mcp-use@1.28.0-canary.9
+
+## 6.0.0-canary.8
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.8
+
+## 6.0.0-canary.7
+
+### Patch Changes
+
+- 097f57c: Resolved duplicate exports flagged by Knip.
+  - Annotated the `Tel` alias for `Telemetry` with the `@alias` directive so Knip no longer flags it as a duplicate export. The alias remains available for consumers.
+  - Unified the canonical source path for `Telemetry`, `Tel`, `setTelemetrySource`, and `isBrowserEnvironment` in `src/telemetry/index.ts`. The Node implementation is now the default and is swapped for the browser implementation in browser bundles via the existing tsup substitution plugin.
+  - Removed the redundant default export of `JsonRpcLoggerView` in `@mcp-use/inspector`. The named export is unchanged.
+
+- Updated dependencies [097f57c]
+  - mcp-use@1.28.0-canary.7
+
+## 6.0.0-canary.6
+
+### Minor Changes
+
+- ce16171: feat(cli, inspector): add `mcp-use screenshot` for visual feedback loops on MCP Apps views (MCP-1566)
+
+  `mcp-use screenshot --tool <name> key=value [key2=value2 ...]` calls the tool and renders the result headlessly, saving a PNG of the resulting view. Use `key:=<json>` for nested values, or pass a single JSON object for the legacy form.
+
+  The CLI always spawns a fresh `@mcp-use/inspector` standalone server on a free port (no reuse of whatever happens to be on `localhost:3000`, which could be an unrelated Vite/dev server) and tears it down on exit. It drives the user's existing Chrome / Chromium / Edge / Brave install via the Chrome DevTools Protocol at the new chromeless `/inspector/preview/:view` route inside the inspector SPA. Pass `--inspector <url>` to point at an existing inspector instance; the URL is probed strictly (must return `{ status: "ok" }` JSON on `/inspector/health`) so unrelated servers can't be misidentified. The screenshot pipeline no longer requires being in a project with an MCP server entry — any directory works. Output defaults to `./<view>-<timestamp>.png` in cwd.
+
+  No additional install step or peer dependency is required — the command uses your system Chrome. The browser path is auto-detected on macOS / Linux / Windows; override with `MCP_USE_CHROME_PATH`, `PUPPETEER_EXECUTABLE_PATH`, or `CHROME_PATH` if needed.
+
+  The inspector exposes a new internal `<ViewPreview>` component and a `/preview/:view` client-side route. `MCPAppsRenderer` gains an optional `onReady` callback used by the preview route to drive the readiness signal (`body[data-view-ready="true"]`) that the screenshot command waits for before capturing.
+
+  **Session-aware authentication.** Screenshot now reuses sessions saved by `mcp-use client connect`, so a single OAuth flow covers every subsequent screenshot of that server. Replace `--auth <token>` with `--session <name>` (defaults to the active session); `--mcp <url>` remains as an unauthenticated escape hatch. The OAuth token never enters the browser — the CLI calls the tool, reads the widget resource, and injects the result into Chrome via CDP `Page.addScriptToEvaluateOnNewDocument` (as `globalThis.__mcpUsePreviewBundle`). The preview route detects the global and renders inline, skipping the browser-side MCP connection entirely.
+
+  **Breaking:** `mcp-use screenshot` flags `--auth` and `--header` are removed. Use `mcp-use client connect <url> --name <name>` (with OAuth) once, then `mcp-use screenshot --tool <name>`.
+
+  **Auto-screenshot in `client tools call`.** When `mcp-use client tools call <name>` invokes a tool that declares a UI resource (`_meta.ui.resourceUri` or `openai/outputTemplate`), the CLI now automatically captures a widget screenshot using the same pipeline as `mcp-use screenshot`. The tool result is reused (no double tool-call) and the dev server is auto-spawned if needed. Pass `--no-screenshot` to opt out, or `--screenshot-output <path>` to override the default `./<view>-<timestamp>.png` path. Screenshot failures print a warning but don't fail the tool call.
+
+### Patch Changes
+
+- mcp-use@1.28.0-canary.6
+
+## 6.0.0-canary.5
+
+### Patch Changes
+
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+- Updated dependencies [25a906a]
+  - mcp-use@1.28.0-canary.5
+
+## 5.0.2-canary.4
+
+### Patch Changes
+
+- Updated dependencies [dc71f7f]
+  - mcp-use@1.27.2-canary.4
+
+## 5.0.2-canary.3
+
+### Patch Changes
+
+- Updated dependencies [5bb6d47]
+  - mcp-use@1.27.2-canary.3
+
+## 5.0.2-canary.2
+
+### Patch Changes
+
+- Updated dependencies [79a3f4c]
+  - mcp-use@1.27.2-canary.2
+
+## 5.0.2-canary.1
+
+### Patch Changes
+
+- Updated dependencies [2810bf6]
+  - mcp-use@1.27.2-canary.1
+
+## 5.0.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [549f50c]
+  - mcp-use@1.27.2-canary.0
+
+## 5.0.1
+
+### Patch Changes
+
+- ca1b34f: Fix iframe width shrinking in inline chat mode; only height now responds to widget-reported sizes
+- Updated dependencies [ca1b34f]
+  - mcp-use@1.27.1
+
+## 5.0.1-canary.1
+
+### Patch Changes
+
+- 25a8745: Fix iframe width shrinking in inline chat mode; only height now responds to widget-reported sizes
+  - mcp-use@1.27.1-canary.1
+
+## 5.0.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [c40cd03]
+  - mcp-use@1.27.1-canary.0
+
+## 5.0.0
+
+### Minor Changes
+
+- 78cfc8a: Add "OpenAI Compatible" provider option to the inspector chat configuration.
+
+  A new "OpenAI Compatible" entry in the provider dropdown lets users point the inspector chat at any OpenAI-compatible API (e.g. LM Studio, Ollama, OpenRouter). Selecting it exposes a required Base URL field and an optional API key. The standard OpenAI provider is unchanged.
+
+- 78cfc8a: Add OpenRouter as a first-class provider in the inspector chat configuration.
+
+  Selecting "OpenRouter" lets users authenticate with a single OpenRouter API key and access models from multiple upstream providers (OpenAI, Anthropic, Google, etc.). Internally, OpenRouter requests reuse the OpenAI provider with an override base URL and the required `HTTP-Referer` / `X-Title` headers.
+
+- 78cfc8a: Add support for pre-registered OAuth client IDs (proxy mode), including optional client secrets for confidential clients.
+
+  `UseMcpOptions` / `McpServerOptions` now accept an `oauth: { clientId?, clientSecret?, scope? }` field. When `clientId` is provided, `BrowserOAuthClientProvider` returns it from `clientInformation()` so the SDK skips Dynamic Client Registration — required for MCP servers that proxy through providers like Slack or WorkOS, which strip `registration_endpoint` from metadata. When `clientSecret` is also provided, the SDK auto-switches token-endpoint auth from `none` to `client_secret_basic`/`client_secret_post`, which is useful for providers that don't support PKCE. `scope` is forwarded as `clientMetadata.scope`.
+
+  The Inspector's Authentication dialog now has `Client ID`, `Client Secret`, and `Scope` fields, all wired through `addServer` / `updateServer`.
+
+### Patch Changes
+
+- 78cfc8a: fix(inspector): honor `MCP_USE_ANONYMIZED_TELEMETRY=false` for the
+  in-browser `useMcp` posthog-js init.
+
+  Previously the env var only disabled Node-side telemetry and the
+  inspector's server-side proxy. The `useMcp` React hook still
+  initialized `posthog-js` directly in the browser, sending events to
+  `https://eu.i.posthog.com` that ad/tracker blockers would flag.
+
+  The inspector server now mirrors the env var into a per-page runtime
+  flag (`window.__MCP_USE_ANONYMIZED_TELEMETRY__`) before the client
+  bundle runs; both `mcp-use`'s browser telemetry and the inspector's
+  own client telemetry honor that flag, so a single env var disables
+  every telemetry path. The flag is page-scoped — it leaves no
+  persistent state, so unsetting the env var fully restores defaults on
+  the next page load. Default behavior (telemetry on) is unchanged.
+
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+- Updated dependencies [78cfc8a]
+  - mcp-use@1.27.0
+
+## 5.0.0-canary.5
+
+### Patch Changes
+
+- 02c8e2d: fix(inspector): honor `MCP_USE_ANONYMIZED_TELEMETRY=false` for the
+  in-browser `useMcp` posthog-js init.
+
+  Previously the env var only disabled Node-side telemetry and the
+  inspector's server-side proxy. The `useMcp` React hook still
+  initialized `posthog-js` directly in the browser, sending events to
+  `https://eu.i.posthog.com` that ad/tracker blockers would flag.
+
+  The inspector server now mirrors the env var into a per-page runtime
+  flag (`window.__MCP_USE_ANONYMIZED_TELEMETRY__`) before the client
+  bundle runs; both `mcp-use`'s browser telemetry and the inspector's
+  own client telemetry honor that flag, so a single env var disables
+  every telemetry path. The flag is page-scoped — it leaves no
+  persistent state, so unsetting the env var fully restores defaults on
+  the next page load. Default behavior (telemetry on) is unchanged.
+
+- Updated dependencies [02c8e2d]
+  - mcp-use@1.27.0-canary.5
+
+## 5.0.0-canary.4
+
+### Minor Changes
+
+- afbfa92: Add support for pre-registered OAuth client IDs (proxy mode), including optional client secrets for confidential clients.
+
+  `UseMcpOptions` / `McpServerOptions` now accept an `oauth: { clientId?, clientSecret?, scope? }` field. When `clientId` is provided, `BrowserOAuthClientProvider` returns it from `clientInformation()` so the SDK skips Dynamic Client Registration — required for MCP servers that proxy through providers like Slack or WorkOS, which strip `registration_endpoint` from metadata. When `clientSecret` is also provided, the SDK auto-switches token-endpoint auth from `none` to `client_secret_basic`/`client_secret_post`, which is useful for providers that don't support PKCE. `scope` is forwarded as `clientMetadata.scope`.
+
+  The Inspector's Authentication dialog now has `Client ID`, `Client Secret`, and `Scope` fields, all wired through `addServer` / `updateServer`.
+
+### Patch Changes
+
+- Updated dependencies [afbfa92]
+  - mcp-use@1.27.0-canary.4
+
+## 5.0.0-canary.3
+
+### Minor Changes
+
+- 870983e: Add OpenRouter as a first-class provider in the inspector chat configuration.
+
+  Selecting "OpenRouter" lets users authenticate with a single OpenRouter API key and access models from multiple upstream providers (OpenAI, Anthropic, Google, etc.). Internally, OpenRouter requests reuse the OpenAI provider with an override base URL and the required `HTTP-Referer` / `X-Title` headers.
+
+### Patch Changes
+
+- mcp-use@1.27.0-canary.3
+
+## 5.0.0-canary.2
+
+### Minor Changes
+
+- 8b4f674: Add "OpenAI Compatible" provider option to the inspector chat configuration.
+
+  A new "OpenAI Compatible" entry in the provider dropdown lets users point the inspector chat at any OpenAI-compatible API (e.g. LM Studio, Ollama, OpenRouter). Selecting it exposes a required Base URL field and an optional API key. The standard OpenAI provider is unchanged.
+
+### Patch Changes
+
+- mcp-use@1.27.0-canary.2
+
+## 5.0.0-canary.1
+
+### Patch Changes
+
+- mcp-use@1.27.0-canary.1
+
+## 5.0.0-canary.0
+
+### Patch Changes
+
+- Updated dependencies [1633518]
+  - mcp-use@1.27.0-canary.0
+
+## 4.0.0
+
+### Patch Changes
+
+- Updated dependencies [bdf9182]
+- Updated dependencies [bdf9182]
+  - mcp-use@1.26.0
+
+## 4.0.0-canary.1
+
+### Patch Changes
+
+- Updated dependencies [1b70559]
+  - mcp-use@1.26.0-canary.1
+
+## 3.0.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [2636f32]
+  - mcp-use@1.25.2-canary.0
+
+## 3.0.1
+
+### Patch Changes
+
+- 806dbca: fix(inspector): hide Manufact free-tier "Model & usage" dialog when host app embeds `ChatTab` with its own session (MCP-1903)
+
+  The cloud dashboard chat was leaking the hosted inspector's free-tier sign-in / bring-your-own-key modal (plus the "anthropic/server-managed" model badge) even though it passed `hideModelBadge={true}` and already had its own authenticated session and model selector.
+
+  `ChatTab` was auto-deriving `freeTierInfo` from `isManaged` (i.e., the mere presence of `managedLlmConfig`), and both the badge and `ConfigurationDialog` treated `freeTierInfo` as an override that forces the UI back on regardless of `hideModelBadge` / `hideConfigButton`.
+
+  Free-tier upgrade UI is now opt-in via a new `enableFreeTierUpgrade?: boolean` prop on `ChatTab` (default `false`), plumbed through `EmbeddedConfig.chatEnableFreeTierUpgrade`. The hosted inspector (`inspector.manufact.com`) auto-seeds it to `true`; host apps that embed `ChatTab` directly (e.g. the cloud dashboard) leave it off and their hide-\* props are respected.
+
+- 806dbca: fix(inspector): suppress duplicate model UI when embedded with `managedLlmConfig` + `hideModelBadge` (MCP-1913)
+
+  If the user had a bring-your-own-key config in `localStorage`, `effectiveClientSide` became true. The host can pass `managedLlmConfig` and `hideModelBadge` (e.g. cloud dashboard with `ServerChatHeader` + `LLMModelSelector`), but the inspector still showed its own `provider/model` UI: the landing pill below the input, and (in threaded view) `ChatHeader`'s absolute model badge — overlapping the dashboard title and model row.
+
+  When `managedLlmConfig` and `hideModelBadge` are both set, the inspector now suppresses that duplicate chrome in both landing and non-landing views. Standalone hosted behavior is unchanged when the host does not pass this embed pair.
+
+  Additionally, for `useClientSide={false}` + `managedLlmConfig` (host-owned chat stream), the chat path no longer auto-switches to client-side streaming when `localLlmConfig` exists in `localStorage` from a past standalone inspector session. The host’s `chatApiUrl` (e.g. org chat stream) is used unless the user explicitly opts into BYOK (`forceClientSide` via rate-limit / “use your own key”).
+
+- 806dbca: fix(inspector): detect Hono via duck-typing, not `instanceof`
+
+  `mountInspector(app)` chose between a fast Hono-direct path and a slower Express-compat bridge based on `app instanceof Hono`. That check is unreliable across a published library boundary. When this package and the host (e.g. `mcp-use`) resolve different `Hono` constructors (common in monorepos where workspace deps hoist their own `hono`, when Node loads Hono's dual CJS+ESM builds from the same on-disk copy as two separate module records, or under bundler dedup), `instanceof` returns false even for a real Hono app. The Express bridge then runs against a Hono `Context` and crashes on every request trying to read `req.headers.host`:
+
+  ```
+  TypeError: Cannot read properties of undefined (reading 'host')
+      at .../@mcp-use/inspector/dist/server/chunk-*.js (mountInspector Express bridge)
+  ```
+
+  Switch to a duck-type check: Hono apps expose `.fetch(Request) => Response`; Express apps don't. The check is unambiguous for the documented input set and works regardless of which physical Hono module produced the app. Surfaces immediately in the new Next.js drop-in flow (`--mcp-dir`) because Next.js apps almost always pull in a second `hono` through other deps, but the underlying problem applies any time the host and inspector resolve Hono through different module records.
+
+- 806dbca: fix(inspector): OAuth flow no longer leaves two tabs open (#1384)
+
+  Previously, connecting to an OAuth-protected MCP server from the inspector opened the authorization page in a new tab, and after the user authorized the app the callback redirected back to the inspector inside that second tab — leaving the user with two inspector tabs.
+
+  The inspector now uses the same-tab redirect flow (`useRedirectFlow: true`) combined with `preventAutoAuth: true`, so the OAuth authorization page opens in the current tab and the callback navigates the same tab back to the original inspector URL. The user ends up with a single tab.
+
+  The `Authenticate` anchor no longer sets `target="_blank"` / `rel="noopener noreferrer"` — clicking it now navigates the current tab directly to the stored auth URL. All connection entry points in the inspector (`handleAddConnection`, the `Layout` adapter, and the `InspectorDashboard` adapter used by `handleUpdateConnection` on URL edits, as well as `useAutoConnect`) propagate the same flags so the single-tab behavior is consistent across manual connect, URL edits, and auto-connect from shared config.
+
+- 806dbca: Fix OAuth error handling to redirect back to inspector instead of showing raw error page. When OAuth callback receives an error (e.g. user denies access), the callback now looks up the stored state first to retrieve the returnUrl, then redirects back to the inspector with error parameters instead of immediately throwing and displaying a raw error page with stack traces. The inspector surfaces these errors as a persistent App-level toast that fires regardless of the active route.
+- 806dbca: Fix MCP App widget overlaying the chat header. Removed the explicit `z-20`/`z-10` stacking context from the sandboxed iframe wrappers in `MCPAppsRenderer` and `OpenAIComponentRenderer` so widgets scroll beneath the chat header instead of painting over it.
+- 806dbca: fix(inspector): store connection config in sessionStorage before OAuth redirect so auto-reconnect works without ?autoConnect param
+- Updated dependencies [806dbca]
+- Updated dependencies [806dbca]
+  - mcp-use@1.25.1
+
+## 3.0.1-canary.8
+
+### Patch Changes
+
+- d62850e: fix(inspector): detect Hono via duck-typing, not `instanceof`
+
+  `mountInspector(app)` chose between a fast Hono-direct path and a slower Express-compat bridge based on `app instanceof Hono`. That check is unreliable across a published library boundary. When this package and the host (e.g. `mcp-use`) resolve different `Hono` constructors (common in monorepos where workspace deps hoist their own `hono`, when Node loads Hono's dual CJS+ESM builds from the same on-disk copy as two separate module records, or under bundler dedup), `instanceof` returns false even for a real Hono app. The Express bridge then runs against a Hono `Context` and crashes on every request trying to read `req.headers.host`:
+
+  ```
+  TypeError: Cannot read properties of undefined (reading 'host')
+      at .../@mcp-use/inspector/dist/server/chunk-*.js (mountInspector Express bridge)
+  ```
+
+  Switch to a duck-type check: Hono apps expose `.fetch(Request) => Response`; Express apps don't. The check is unambiguous for the documented input set and works regardless of which physical Hono module produced the app. Surfaces immediately in the new Next.js drop-in flow (`--mcp-dir`) because Next.js apps almost always pull in a second `hono` through other deps, but the underlying problem applies any time the host and inspector resolve Hono through different module records.
+  - mcp-use@1.25.1-canary.8
+
+## 3.0.1-canary.7
+
+### Patch Changes
+
+- Updated dependencies [dd0ec5f]
+  - mcp-use@1.25.1-canary.7
+
+## 3.0.1-canary.6
+
+### Patch Changes
+
+- 47b446e: fix(inspector): store connection config in sessionStorage before OAuth redirect so auto-reconnect works without ?autoConnect param
+  - mcp-use@1.25.1-canary.6
+
+## 3.0.1-canary.5
+
+### Patch Changes
+
+- c1ea21a: Fix OAuth error handling to redirect back to inspector instead of showing raw error page. When OAuth callback receives an error (e.g. user denies access), the callback now looks up the stored state first to retrieve the returnUrl, then redirects back to the inspector with error parameters instead of immediately throwing and displaying a raw error page with stack traces. The inspector surfaces these errors as a persistent App-level toast that fires regardless of the active route.
+- Updated dependencies [c1ea21a]
+  - mcp-use@1.25.1-canary.5
+
+## 3.0.1-canary.4
+
+### Patch Changes
+
+- mcp-use@1.25.1-canary.4
+
+## 3.0.1-canary.3
+
+### Patch Changes
+
+- f41869b: fix(inspector): suppress duplicate model UI when embedded with `managedLlmConfig` + `hideModelBadge` (MCP-1913)
+
+  If the user had a bring-your-own-key config in `localStorage`, `effectiveClientSide` became true. The host can pass `managedLlmConfig` and `hideModelBadge` (e.g. cloud dashboard with `ServerChatHeader` + `LLMModelSelector`), but the inspector still showed its own `provider/model` UI: the landing pill below the input, and (in threaded view) `ChatHeader`'s absolute model badge — overlapping the dashboard title and model row.
+
+  When `managedLlmConfig` and `hideModelBadge` are both set, the inspector now suppresses that duplicate chrome in both landing and non-landing views. Standalone hosted behavior is unchanged when the host does not pass this embed pair.
+
+  Additionally, for `useClientSide={false}` + `managedLlmConfig` (host-owned chat stream), the chat path no longer auto-switches to client-side streaming when `localLlmConfig` exists in `localStorage` from a past standalone inspector session. The host’s `chatApiUrl` (e.g. org chat stream) is used unless the user explicitly opts into BYOK (`forceClientSide` via rate-limit / “use your own key”).
+  - mcp-use@1.25.1-canary.3
+
+## 3.0.1-canary.2
+
+### Patch Changes
+
+- dfe35fa: Fix MCP App widget overlaying the chat header. Removed the explicit `z-20`/`z-10` stacking context from the sandboxed iframe wrappers in `MCPAppsRenderer` and `OpenAIComponentRenderer` so widgets scroll beneath the chat header instead of painting over it.
+  - mcp-use@1.25.1-canary.2
+
+## 3.0.1-canary.1
+
+### Patch Changes
+
+- mcp-use@1.25.1-canary.1
+
+## 3.0.1-canary.0
+
+### Patch Changes
+
+- c864134: fix(inspector): hide Manufact free-tier "Model & usage" dialog when host app embeds `ChatTab` with its own session (MCP-1903)
+
+  The cloud dashboard chat was leaking the hosted inspector's free-tier sign-in / bring-your-own-key modal (plus the "anthropic/server-managed" model badge) even though it passed `hideModelBadge={true}` and already had its own authenticated session and model selector.
+
+  `ChatTab` was auto-deriving `freeTierInfo` from `isManaged` (i.e., the mere presence of `managedLlmConfig`), and both the badge and `ConfigurationDialog` treated `freeTierInfo` as an override that forces the UI back on regardless of `hideModelBadge` / `hideConfigButton`.
+
+  Free-tier upgrade UI is now opt-in via a new `enableFreeTierUpgrade?: boolean` prop on `ChatTab` (default `false`), plumbed through `EmbeddedConfig.chatEnableFreeTierUpgrade`. The hosted inspector (`inspector.manufact.com`) auto-seeds it to `true`; host apps that embed `ChatTab` directly (e.g. the cloud dashboard) leave it off and their hide-\* props are respected.
+
+- a59476b: fix(inspector): OAuth flow no longer leaves two tabs open (#1384)
+
+  Previously, connecting to an OAuth-protected MCP server from the inspector opened the authorization page in a new tab, and after the user authorized the app the callback redirected back to the inspector inside that second tab — leaving the user with two inspector tabs.
+
+  The inspector now uses the same-tab redirect flow (`useRedirectFlow: true`) combined with `preventAutoAuth: true`, so the OAuth authorization page opens in the current tab and the callback navigates the same tab back to the original inspector URL. The user ends up with a single tab.
+
+  The `Authenticate` anchor no longer sets `target="_blank"` / `rel="noopener noreferrer"` — clicking it now navigates the current tab directly to the stored auth URL. All connection entry points in the inspector (`handleAddConnection`, the `Layout` adapter, and the `InspectorDashboard` adapter used by `handleUpdateConnection` on URL edits, as well as `useAutoConnect`) propagate the same flags so the single-tab behavior is consistent across manual connect, URL edits, and auto-connect from shared config.
+  - mcp-use@1.25.1-canary.0
+
 ## 3.0.0
 
 ### Minor Changes
