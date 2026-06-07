@@ -7,27 +7,6 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-*.manifest
-*.spec
 
 # Installer logs
 pip-log.txt
@@ -126,3 +105,81 @@ dmypy.json
 # AI
 .cursor
 .claude
+.agents
+.codex
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Dependencies
+*.tsbuildinfo
+dist/
+node_modules
+.pnp
+.pnp.js
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing
+coverage
+
+# Conformance test results
+**/conformance/results/
+**/conformance/*-conformance-results.txt
+python-conformance-results.txt
+typescript-conformance-results.txt
+typescript-conformance-results-final.txt
+results/
+
+# Implementation notes and development files
+ELICITATION_IMPLEMENTATION.md
+ext-apps/
+
+# Turbo
+.turbo
+
+# Vercel
+.vercel
+
+# Build Oututs
+.next/
+out/
+build
+dist
+
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+.DS_Store
+*.pem
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.coverage
+agent_history.gif
+static/browser_history/*.gif
+
+# Virtual environments
+.venv
+
+# user conf
+conf.yaml
+
+# Agents
+.cursor
+.cursorrules
+.claude
+.mcp-use/
