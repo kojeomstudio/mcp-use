@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { Command } from "commander";
+import type { UpdateServerBody } from "../utils/api.js";
 import { McpUseAPI } from "../utils/api.js";
 import { getMcpServerUrlForCloudServer } from "../utils/cloud-urls.js";
 import { getWebUrl, isLoggedIn, readConfig } from "../utils/config.js";
@@ -7,6 +8,8 @@ import { handleCommandError } from "../utils/errors.js";
 import { formatRelativeTime } from "../utils/format.js";
 import { resolveOrgFromOption } from "./auth.js";
 import { createEnvCommand } from "./env.js";
+
+const DEFAULT_LIST_LIMIT = 30;
 
 async function prompt(question: string): Promise<boolean> {
   const readline = await import("node:readline");
@@ -61,6 +64,31 @@ function getStatusColor(status: string): (text: string) => string {
   return chalk.gray;
 }
 
+function formatPageHeader(label: string, count: number, total: number): string {
+  return count === total
+    ? `${label} (${total})`
+    : `${label} (${count} of ${total})`;
+}
+
+function printNextPageHint(
+  command: string,
+  page: { items: unknown[]; total: number; limit: number; skip: number },
+  extraArgs: string[] = []
+): void {
+  const nextSkip = page.skip + page.items.length;
+  if (nextSkip >= page.total) return;
+
+  const args = [
+    command,
+    "--limit",
+    String(page.limit),
+    "--skip",
+    String(nextSkip),
+    ...extraArgs,
+  ];
+  console.log(chalk.gray(`Next page: ${args.join(" ")}`));
+}
+
 async function listServersCommand(options: {
   org?: string;
   limit?: string;
@@ -82,7 +110,9 @@ async function listServersCommand(options: {
     await applyOrgOption(api, options.org);
     if (options.org) console.log();
 
-    const limit = options.limit ? parseInt(options.limit, 10) : undefined;
+    const limit = options.limit
+      ? parseInt(options.limit, 10)
+      : DEFAULT_LIST_LIMIT;
     const skip = options.skip ? parseInt(options.skip, 10) : undefined;
     if (limit !== undefined && (Number.isNaN(limit) || limit < 1)) {
       console.log(chalk.red("✗ Invalid --limit"));
@@ -93,23 +123,33 @@ async function listServersCommand(options: {
       process.exit(1);
     }
 
-    const servers = await api.listServers({
+    const page = await api.listServers({
       limit,
       skip,
       sort: options.sort,
     });
+    const servers = page.items;
 
     if (servers.length === 0) {
-      console.log(chalk.yellow("No servers found."));
-      console.log(
-        chalk.gray(
-          "\nCreate one by deploying with " + chalk.white("mcp-use deploy")
-        )
-      );
+      if (page.total === 0) {
+        console.log(chalk.yellow("No servers found."));
+        console.log(
+          chalk.gray(
+            "\nCreate one by deploying with " + chalk.white("mcp-use deploy")
+          )
+        );
+      } else {
+        console.log(chalk.yellow(`No servers found at --skip ${page.skip}.`));
+        console.log(chalk.gray(`Total servers: ${page.total}`));
+      }
       return;
     }
 
-    console.log(chalk.cyan.bold(`\n🖥  Servers (${servers.length})\n`));
+    console.log(
+      chalk.cyan.bold(
+        `\n🖥  ${formatPageHeader("Servers", servers.length, page.total)}\n`
+      )
+    );
 
     console.log(
       chalk.white.bold(
@@ -132,6 +172,10 @@ async function listServersCommand(options: {
       );
     }
 
+    const extraArgs = [];
+    if (options.sort) extraArgs.push("--sort", options.sort);
+    if (options.org) extraArgs.push("--org", options.org);
+    printNextPageHint("mcp-use servers list", page, extraArgs);
     console.log();
   } catch (error) {
     handleCommandError(error, "Failed to list servers");
@@ -182,10 +226,39 @@ async function getServerCommand(idOrSlug: string, options: { org?: string }) {
     if (server.connectedRepository) {
       const cr = server.connectedRepository;
       console.log(chalk.white("\nRepository"));
-      console.log(chalk.white("  Full name:   ") + chalk.gray(cr.repoFullName));
+      console.log(
+        chalk.white("  Full name:   ") +
+          chalk.gray(cr.repoFullName ?? "mcp-use-managed (private)")
+      );
       console.log(
         chalk.white("  Prod branch: ") + chalk.gray(cr.productionBranch)
       );
+      if (cr.watchPaths !== undefined) {
+        console.log(
+          chalk.white("  Watch paths: ") +
+            chalk.gray(
+              cr.watchPaths.length > 0
+                ? cr.watchPaths.join(", ")
+                : "(all changes)"
+            )
+        );
+      }
+      if (cr.deployBranchPatterns !== undefined) {
+        console.log(
+          chalk.white("  Deploy branches: ") +
+            chalk.gray(
+              cr.deployBranchPatterns.length > 0
+                ? cr.deployBranchPatterns.join(", ")
+                : "(all branches)"
+            )
+        );
+      }
+      if (cr.waitForCi !== undefined) {
+        console.log(
+          chalk.white("  Wait for CI: ") +
+            chalk.gray(cr.waitForCi ? "yes" : "no")
+        );
+      }
     }
 
     if (server.activeDeploymentId) {
@@ -255,6 +328,136 @@ async function getServerCommand(idOrSlug: string, options: { org?: string }) {
     console.log();
   } catch (error) {
     handleCommandError(error, "Failed to get server");
+  }
+}
+
+/**
+ * Resolves a variadic glob option to the array sent to the API. A lone empty
+ * string (`--watch-paths ""`) clears the list; otherwise empties are dropped.
+ */
+function resolveGlobList(values: string[]): string[] {
+  return values.map((v) => v.trim()).filter((v) => v.length > 0);
+}
+
+async function updateServerCommand(
+  idOrSlug: string,
+  options: {
+    branch?: string;
+    name?: string;
+    buildCommand?: string;
+    startCommand?: string;
+    description?: string;
+    watchPaths?: string[];
+    deployBranches?: string[];
+    waitForCi?: boolean;
+    rootDir?: string;
+    org?: string;
+  },
+  command?: Command
+): Promise<void> {
+  try {
+    if (!(await isLoggedIn())) {
+      console.log(chalk.red("✗ You are not logged in."));
+      console.log(
+        chalk.gray(
+          "Run " + chalk.white("npx mcp-use login") + " to get started."
+        )
+      );
+      process.exit(1);
+    }
+
+    // Map CLI flags to the backend `UpdateServerBody` shape. `--branch` is the
+    // production branch (`productionBranch`); build/start command overrides are
+    // nested under `config` (the backend merges `config` shallowly, so only the
+    // provided keys change).
+    const body: UpdateServerBody = {};
+    if (options.name !== undefined) body.name = options.name;
+    if (options.description !== undefined)
+      body.description = options.description;
+    if (options.branch !== undefined) body.productionBranch = options.branch;
+    // Auto-deploy trigger config lives on the connected repository (top-level
+    // on the PATCH body, not under `config`). A lone `""` clears the list.
+    if (options.watchPaths !== undefined)
+      body.watchPaths = resolveGlobList(options.watchPaths);
+    if (options.deployBranches !== undefined)
+      body.deployBranchPatterns = resolveGlobList(options.deployBranches);
+    // `--no-wait-for-ci` makes commander default `waitForCi` to true, so only
+    // forward it when the user actually passed one of the flags.
+    if (
+      options.waitForCi !== undefined &&
+      command?.getOptionValueSource("waitForCi") === "cli"
+    ) {
+      body.waitForCi = options.waitForCi;
+    }
+
+    const config: Record<string, unknown> = {};
+    if (options.buildCommand !== undefined) {
+      // Empty string clears the override (backend merge-patch: null removes key).
+      config.buildCommand =
+        options.buildCommand === "" ? null : options.buildCommand;
+    }
+    if (options.startCommand !== undefined) {
+      config.startCommand =
+        options.startCommand === "" ? null : options.startCommand;
+    }
+    if (options.rootDir !== undefined) {
+      // Empty string resets to the repo root (merge-patch: null removes key).
+      config.rootDir = options.rootDir === "" ? null : options.rootDir;
+    }
+    if (Object.keys(config).length > 0) body.config = config;
+
+    if (Object.keys(body).length === 0) {
+      console.error(
+        chalk.red(
+          "✗ Nothing to update. Provide at least one of: --branch, --name, --build-command, --start-command, --description, --watch-paths, --deploy-branches, --wait-for-ci/--no-wait-for-ci, --root-dir."
+        )
+      );
+      process.exit(1);
+    }
+
+    const api = await McpUseAPI.create();
+    await applyOrgOption(api, options.org);
+    if (options.org) console.log();
+
+    const server = await api.updateServer(idOrSlug, body);
+
+    const label = server.name || server.slug || server.id;
+    console.log(chalk.green.bold(`\n✓ Server updated: ${label}`));
+    const repo = server.connectedRepository;
+    if (repo) {
+      console.log(
+        chalk.gray("  Prod branch: ") + chalk.cyan(repo.productionBranch)
+      );
+      if (repo.watchPaths !== undefined) {
+        console.log(
+          chalk.gray("  Watch paths: ") +
+            chalk.cyan(
+              repo.watchPaths.length > 0
+                ? repo.watchPaths.join(", ")
+                : "(all changes)"
+            )
+        );
+      }
+      if (repo.deployBranchPatterns !== undefined) {
+        console.log(
+          chalk.gray("  Deploy branches: ") +
+            chalk.cyan(
+              repo.deployBranchPatterns.length > 0
+                ? repo.deployBranchPatterns.join(", ")
+                : "(all branches)"
+            )
+        );
+      }
+      if (repo.waitForCi !== undefined) {
+        console.log(
+          chalk.gray("  Wait for CI: ") +
+            chalk.cyan(repo.waitForCi ? "yes" : "no")
+        );
+      }
+    }
+    console.log();
+  } catch (error) {
+    handleCommandError(error, "Failed to update server");
   }
 }
 
@@ -329,7 +532,7 @@ export function createServersCommand(): Command {
     .alias("ls")
     .description("List servers for the current organization")
     .option("--org <slug-or-id>", "Target organization (slug, id, or name)")
-    .option("--limit <n>", "Page size (1–100, default 50)")
+    .option("--limit <n>", "Page size (default 30)")
     .option("--skip <n>", "Offset for pagination")
     .option("--sort <field:asc|desc>", "Sort (e.g. updatedAt:desc)")
     .action(listServersCommand);
@@ -340,6 +543,44 @@ export function createServersCommand(): Command {
     .option("--org <slug-or-id>", "Resolve org context before fetch")
     .description("Show server details and recent deployments")
     .action(getServerCommand);
+
+  serversCommand
+    .command("update")
+    .argument("<id-or-slug>", "Server UUID or slug")
+    .description("Update server configuration (branch, name, commands, …)")
+    .option(
+      "--branch <name>",
+      "New production branch — controls which branch triggers production deploys"
+    )
+    .option("--name <name>", "Rename the server")
+    .option(
+      "--build-command <cmd>",
+      "Override the build command (pass an empty string to clear)"
+    )
+    .option(
+      "--start-command <cmd>",
+      "Override the start command (pass an empty string to clear)"
+    )
+    .option("--description <text>", "Update the server description")
+    .option(
+      "--watch-paths <glob...>",
+      'Only auto-deploy when files matching these globs change (monorepos). Pass "" to clear.'
+    )
+    .option(
+      "--deploy-branches <glob...>",
+      'Branch globs allowed to trigger auto-deploys (besides the production branch). Pass "" to allow all.'
+    )
+    .option(
+      "--wait-for-ci",
+      "Hold GitHub auto-deploys until other check runs pass"
+    )
+    .option("--no-wait-for-ci", "Do not wait for other check runs")
+    .option(
+      "--root-dir <path>",
+      'Repo subdirectory to build from (monorepos). Pass "" to reset to the repo root.'
+    )
+    .option("--org <slug-or-id>", "Target organization")
+    .action(updateServerCommand);
 
   serversCommand
     .command("delete")

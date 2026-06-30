@@ -14,6 +14,8 @@ import React, {
 import { toast } from "sonner";
 import { copyToClipboard } from "../utils/clipboard";
 import { downloadJSON } from "../utils/jsonUtils";
+import { shouldShowFreeTierUpgrade } from "./chat/freeTier";
+import { useHostedSession } from "../hooks/useHostedSession";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useMCPPrompts } from "../hooks/useMCPPrompts";
 import { ChatHeader } from "./chat/ChatHeader";
@@ -93,6 +95,13 @@ export interface ChatTabProps {
   /** Extra headers to send with every streaming request. */
   extraHeaders?: Record<string, string>;
   /**
+   * True when the hosted inspector's managed key isn't usable because the
+   * selected server is on localhost (the managed backend can't reach it).
+   * Surfaces an explanatory notice on the configure-key empty state so the
+   * BYOK fallback is explained rather than silent. Default: false.
+   */
+  managedKeyUnavailable?: boolean;
+  /**
    * Custom body builder for the streaming request.
    * Use to send only `{ messages }` to a server-managed backend.
    */
@@ -135,6 +144,7 @@ export function ChatTab({
   credentials,
   extraHeaders,
   body,
+  managedKeyUnavailable = false,
 }: ChatTabProps) {
   const [inputValue, setInputValue] = useState("");
   const [promptsDropdownOpen, setPromptsDropdownOpen] = useState(false);
@@ -312,10 +322,22 @@ export function ChatTab({
     setShowLoginModal(true);
   }, [setConfigDialogOpen]);
 
-  const freeTierInfo =
-    isManaged && enableFreeTierUpgrade
-      ? { onLoginClick: handleOpenLogin }
-      : undefined;
+  // Whether the visitor is signed in to Manufact (hosted free-tier only). Used
+  // to suppress the "Sign in to increase your limits" prompt once authenticated
+  // — otherwise signed-in users keep getting asked to log in (MCP-2142). Only
+  // probed for the hosted free-tier UI; BYOK and host embeds skip the fetch.
+  const { user: hostedUser } = useHostedSession(
+    enableFreeTierUpgrade ? chatApiUrl : undefined
+  );
+  const isHostedAuthenticated = hostedUser != null;
+
+  const freeTierInfo = shouldShowFreeTierUpgrade({
+    isManaged,
+    enableFreeTierUpgrade,
+    isAuthenticated: isHostedAuthenticated,
+  })
+    ? { onLoginClick: handleOpenLogin }
+    : undefined;
 
   // Host embed (e.g. cloud dashboard) passes `managedLlmConfig` + `hideModelBadge`
   // because it renders its own model row (`ServerChatHeader`). Suppress inspector
@@ -1154,11 +1176,13 @@ export function ChatTab({
       {/* Messages Area */}
       <div
         ref={messagesAreaRef}
+        data-testid="chat-messages-scroll-container"
         className="flex-1 overflow-y-auto p-2 sm:p-4 pt-[80px] sm:pt-[100px]"
       >
         {!llmConfig ? (
           <ConfigureEmptyState
             onConfigureClick={() => setConfigDialogOpen(true)}
+            managedKeyUnavailable={managedKeyUnavailable}
           />
         ) : (
           <MessageList
@@ -1172,6 +1196,7 @@ export function ChatTab({
             pendingElicitationRequests={connection.pendingElicitationRequests}
             onApproveElicitation={connection.approveElicitation}
             onRejectElicitation={connection.rejectElicitation}
+            scrollContainerRef={messagesAreaRef}
           />
         )}
       </div>

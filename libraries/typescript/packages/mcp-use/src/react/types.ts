@@ -45,6 +45,12 @@ export type UseMcpOptions = {
     customHeaders?: Record<string, string>;
   };
   /**
+   * Connection policy used by higher-level clients such as the Inspector.
+   * Behavior is controlled by `proxyConfig` and `autoProxyFallback`; this field
+   * is persisted so editors can distinguish Auto, forced Direct, and forced Proxy.
+   */
+  connectionMode?: "auto" | "direct" | "proxy";
+  /**
    * Enable automatic proxy fallback when direct connection fails
    * When enabled, if a direct connection fails with FastMCP or CORS errors,
    * automatically retries using the proxy configuration
@@ -412,6 +418,19 @@ export type UseMcpResult = {
     expires_at?: number;
     refresh_token?: string;
     scope?: string;
+    /**
+     * OAuth token endpoint resolved during discovery (when available). Lets
+     * consumers persist it so a backend can proactively refresh the token.
+     */
+    token_endpoint?: string;
+    /**
+     * OAuth client id (from Dynamic Client Registration or a static client).
+     * Most token endpoints require it on refresh, so consumers can persist it
+     * for server-side proactive refresh.
+     */
+    client_id?: string;
+    /** OAuth client secret, when the provider issued a confidential client. */
+    client_secret?: string;
   };
   /** Array of internal log messages (useful for debugging) */
   log: {

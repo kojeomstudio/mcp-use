@@ -1,5 +1,511 @@
 # @mcp-use/cli
 
+## 3.6.0
+
+### Minor Changes
+
+- 430178c: Expose monorepo auto-deploy trigger config in the CLI. `mcp-use deploy` gains `--watch-paths` and `--wait-for-ci` for new GitHub servers, and `mcp-use servers update` gains `--watch-paths`, `--deploy-branches`, `--wait-for-ci`/`--no-wait-for-ci`, and `--root-dir`. `mcp-use servers get`/`update` now print the effective watch paths, deploy branch patterns, and wait-for-CI setting. This closes the gap where the Cloud API accepted these fields but the CLI could not set them, so monorepo apps can be scoped to only redeploy on relevant changes.
+
+### Patch Changes
+
+- 430178c: `mcp-use deployments list` now preserves the deployment ordering returned by the API instead of re-sorting by creation date on the client. This keeps the displayed order consistent with the server's pagination and sort.
+- 430178c: Fix Codex skills installation to use `.agents/skills` instead of the unsupported `.agent/skills` path.
+- 430178c: Updated dependency `vite` to `^8.0.16`.
+- 430178c: `mcp-use deploy` now surfaces the GitHub App installation URL up front when the app isn't connected or lacks repo access, before any prompt. In a non-interactive context (an agent or CI, without `--yes`) it prints the URL and clear next steps and exits cleanly instead of hanging on an unanswerable prompt.
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+  - @mcp-use/inspector@11.0.0
+  - mcp-use@1.33.0
+
+## 3.6.0-canary.14
+
+### Patch Changes
+
+- Updated dependencies [7455d7a]
+  - @mcp-use/inspector@11.0.0-canary.14
+  - mcp-use@1.33.0-canary.14
+
+## 3.6.0-canary.13
+
+### Patch Changes
+
+- Updated dependencies [1bd3f8d]
+  - mcp-use@1.33.0-canary.13
+  - @mcp-use/inspector@11.0.0-canary.13
+
+## 3.6.0-canary.12
+
+### Patch Changes
+
+- Updated dependencies [0027695]
+  - mcp-use@1.33.0-canary.12
+  - @mcp-use/inspector@11.0.0-canary.12
+
+## 3.6.0-canary.11
+
+### Minor Changes
+
+- 979e6b8: Expose monorepo auto-deploy trigger config in the CLI. `mcp-use deploy` gains `--watch-paths` and `--wait-for-ci` for new GitHub servers, and `mcp-use servers update` gains `--watch-paths`, `--deploy-branches`, `--wait-for-ci`/`--no-wait-for-ci`, and `--root-dir`. `mcp-use servers get`/`update` now print the effective watch paths, deploy branch patterns, and wait-for-CI setting. This closes the gap where the Cloud API accepted these fields but the CLI could not set them, so monorepo apps can be scoped to only redeploy on relevant changes.
+
+### Patch Changes
+
+- mcp-use@1.33.0-canary.11
+- @mcp-use/inspector@11.0.0-canary.11
+
+## 3.5.3-canary.10
+
+### Patch Changes
+
+- Updated dependencies [84e9c7d]
+  - mcp-use@1.33.0-canary.10
+  - @mcp-use/inspector@11.0.0-canary.10
+
+## 3.5.3-canary.9
+
+### Patch Changes
+
+- Updated dependencies [8dfac9c]
+  - @mcp-use/inspector@10.0.2-canary.9
+  - mcp-use@1.32.2-canary.9
+
+## 3.5.3-canary.8
+
+### Patch Changes
+
+- Updated dependencies [bf90128]
+  - mcp-use@1.32.2-canary.8
+  - @mcp-use/inspector@10.0.2-canary.8
+
+## 3.5.3-canary.7
+
+### Patch Changes
+
+- Updated dependencies [37337f3]
+  - @mcp-use/inspector@10.0.2-canary.7
+  - mcp-use@1.32.2-canary.7
+
+## 3.5.3-canary.6
+
+### Patch Changes
+
+- d639509: `mcp-use deployments list` now preserves the deployment ordering returned by the API instead of re-sorting by creation date on the client. This keeps the displayed order consistent with the server's pagination and sort.
+  - mcp-use@1.32.2-canary.6
+  - @mcp-use/inspector@10.0.2-canary.6
+
+## 3.5.3-canary.5
+
+### Patch Changes
+
+- dfa7562: `mcp-use deploy` now surfaces the GitHub App installation URL up front when the app isn't connected or lacks repo access, before any prompt. In a non-interactive context (an agent or CI, without `--yes`) it prints the URL and clear next steps and exits cleanly instead of hanging on an unanswerable prompt.
+  - mcp-use@1.32.2-canary.5
+  - @mcp-use/inspector@10.0.2-canary.5
+
+## 3.5.3-canary.4
+
+### Patch Changes
+
+- Updated dependencies [b9324be]
+  - mcp-use@1.32.2-canary.4
+  - @mcp-use/inspector@10.0.2-canary.4
+
+## 3.5.3-canary.3
+
+### Patch Changes
+
+- Updated dependencies [e1bcc3f]
+  - @mcp-use/inspector@10.0.2-canary.3
+  - mcp-use@1.32.2-canary.3
+
+## 3.5.3-canary.2
+
+### Patch Changes
+
+- c62e103: Updated dependency `vite` to `^8.0.16`.
+- Updated dependencies [c62e103]
+  - @mcp-use/inspector@10.0.2-canary.2
+  - mcp-use@1.32.2-canary.2
+
+## 3.5.3-canary.1
+
+### Patch Changes
+
+- d962eab: Fix Codex skills installation to use `.agents/skills` instead of the unsupported `.agent/skills` path.
+  - mcp-use@1.32.2-canary.1
+  - @mcp-use/inspector@10.0.2-canary.1
+
+## 3.5.3-canary.0
+
+### Patch Changes
+
+- Updated dependencies [c242a0c]
+  - mcp-use@1.32.2-canary.0
+  - @mcp-use/inspector@10.0.2-canary.0
+
+## 3.5.2
+
+### Patch Changes
+
+- efa7fe7: Cleanly unsubscribe from resource subscriptions when stopping the CLI with Ctrl+C.
+- efa7fe7: Add `--dockerfile` flag to `mcp-use deploy` for selecting a non-default Dockerfile path (relative to `--root-dir` or the repo root). Root `Dockerfile` is still auto-detected without the flag.
+- efa7fe7: Support write-only (sensitive) environment variables. The cloud API now withholds the value of `sensitive` env vars on read (returns `null`), so `EnvVariable.value` is nullable and `env list` / `env add` / `env update` print `<sensitive>` for withheld values instead of an empty string.
+- efa7fe7: Updated dependency `tar` to `^7.5.16`.
+- efa7fe7: Updated dependency `esbuild` to `0.28.1`.
+- efa7fe7: Fix `mcp-use deploy` falsely reporting that the GitHub App cannot access a repository. The pre-flight repo-access check no longer lists/paginates an installation's repos (which only inspected the first page, so repos on later pages were missed, and fully paginating hung on very large orgs). It now asks the backend an authoritative per-installation question (a single GitHub `repos.get`), trying the installation whose account matches the repo owner first and falling back to the others. Requires the backend `GET /github/installations/:installationId/repos/:owner/:repo/access` endpoint.
+- efa7fe7: Allow updating CLI environment variable values to an empty string.
+- efa7fe7: Add support for the `--screenshot` option in REPL/interactive mode when calling tools that support widgets.
+- efa7fe7: fix(cli): update manufact api endpoint
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+  - mcp-use@1.32.1
+  - @mcp-use/inspector@10.0.1
+
+## 3.5.2-canary.14
+
+### Patch Changes
+
+- 7126253: Updated dependency `tar` to `^7.5.16`.
+  - mcp-use@1.32.1-canary.14
+  - @mcp-use/inspector@10.0.1-canary.14
+
+## 3.5.2-canary.13
+
+### Patch Changes
+
+- ab4fcd2: Allow updating CLI environment variable values to an empty string.
+  - mcp-use@1.32.1-canary.13
+  - @mcp-use/inspector@10.0.1-canary.13
+
+## 3.5.2-canary.12
+
+### Patch Changes
+
+- Updated dependencies [c9e1696]
+  - mcp-use@1.32.1-canary.12
+  - @mcp-use/inspector@10.0.1-canary.12
+
+## 3.5.2-canary.11
+
+### Patch Changes
+
+- 048ec9c: Add `--dockerfile` flag to `mcp-use deploy` for selecting a non-default Dockerfile path (relative to `--root-dir` or the repo root). Root `Dockerfile` is still auto-detected without the flag.
+  - mcp-use@1.32.1-canary.11
+  - @mcp-use/inspector@10.0.1-canary.11
+
+## 3.5.2-canary.10
+
+### Patch Changes
+
+- 8849f0f: fix(cli): update manufact api endpoint
+  - mcp-use@1.32.1-canary.10
+  - @mcp-use/inspector@10.0.1-canary.10
+
+## 3.5.2-canary.9
+
+### Patch Changes
+
+- cdc3b13: Add support for the `--screenshot` option in REPL/interactive mode when calling tools that support widgets.
+  - mcp-use@1.32.1-canary.9
+  - @mcp-use/inspector@10.0.1-canary.9
+
+## 3.5.2-canary.8
+
+### Patch Changes
+
+- afe0806: Cleanly unsubscribe from resource subscriptions when stopping the CLI with Ctrl+C.
+  - mcp-use@1.32.1-canary.8
+  - @mcp-use/inspector@10.0.1-canary.8
+
+## 3.5.2-canary.7
+
+### Patch Changes
+
+- Updated dependencies [1fb87d2]
+  - @mcp-use/inspector@10.0.1-canary.7
+  - mcp-use@1.32.1-canary.7
+
+## 3.5.2-canary.6
+
+### Patch Changes
+
+- Updated dependencies [6e7e9bf]
+  - mcp-use@1.32.1-canary.6
+  - @mcp-use/inspector@10.0.1-canary.6
+
+## 3.5.2-canary.5
+
+### Patch Changes
+
+- 1a16878: Updated dependency `esbuild` to `0.28.1`.
+- Updated dependencies [1a16878]
+  - mcp-use@1.32.1-canary.5
+  - @mcp-use/inspector@10.0.1-canary.5
+
+## 3.5.2-canary.4
+
+### Patch Changes
+
+- 72efb63: Fix `mcp-use deploy` falsely reporting that the GitHub App cannot access a repository. The pre-flight repo-access check no longer lists/paginates an installation's repos (which only inspected the first page, so repos on later pages were missed, and fully paginating hung on very large orgs). It now asks the backend an authoritative per-installation question (a single GitHub `repos.get`), trying the installation whose account matches the repo owner first and falling back to the others. Requires the backend `GET /github/installations/:installationId/repos/:owner/:repo/access` endpoint.
+  - mcp-use@1.32.1-canary.4
+  - @mcp-use/inspector@10.0.1-canary.4
+
+## 3.5.2-canary.3
+
+### Patch Changes
+
+- Updated dependencies [2038e04]
+  - @mcp-use/inspector@10.0.1-canary.3
+  - mcp-use@1.32.1-canary.3
+
+## 3.5.2-canary.2
+
+### Patch Changes
+
+- Updated dependencies [8d626cb]
+  - mcp-use@1.32.1-canary.2
+  - @mcp-use/inspector@10.0.1-canary.2
+
+## 3.5.2-canary.1
+
+### Patch Changes
+
+- Updated dependencies [a3f3b65]
+  - mcp-use@1.32.1-canary.1
+  - @mcp-use/inspector@10.0.1-canary.1
+
+## 3.5.2-canary.0
+
+### Patch Changes
+
+- d64db0f: Support write-only (sensitive) environment variables. The cloud API now withholds the value of `sensitive` env vars on read (returns `null`), so `EnvVariable.value` is nullable and `env list` / `env add` / `env update` print `<sensitive>` for withheld values instead of an empty string.
+  - mcp-use@1.32.1-canary.0
+  - @mcp-use/inspector@10.0.1-canary.0
+
+## 3.5.1
+
+### Patch Changes
+
+- Updated dependencies [5b4afc8]
+  - mcp-use@1.32.0
+  - @mcp-use/inspector@10.0.0
+
+## 3.5.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [a683d43]
+  - mcp-use@1.32.0-canary.0
+  - @mcp-use/inspector@10.0.0-canary.0
+
+## 3.5.0
+
+### Minor Changes
+
+- 0fb1868: Add `servers update` and branch-scoped environment management to the CLI.
+  - `mcp-use servers update <id-or-slug>` mutates server config in place (production branch, name, description, build/start commands) without deleting and recreating the server — preserving the URL slug and env vars. `--branch` maps to the backend `productionBranch`; `--build-command`/`--start-command` are stored under the server `config`. Pass an empty string to either flag to clear the override (`null` merge-patch on the backend).
+  - `mcp-use deploy` gains `--branch <name>` (defaults to the current git branch) and scopes `--env`/`--env-file` sync to that branch's preview environment.
+  - `mcp-use servers env list/add/update/rm` gain `--branch <name>` for branch-scoped variables, and `update`/`rm` now accept a variable KEY (resolved within the branch scope) in addition to a UUID.
+  - `mcp-use deployments restart` gains `--branch <name>` (defaults to the deployment's branch).
+
+### Patch Changes
+
+- mcp-use@1.31.1
+- @mcp-use/inspector@9.0.1
+
+## 3.5.0-canary.0
+
+### Minor Changes
+
+- 673a142: Add `servers update` and branch-scoped environment management to the CLI.
+  - `mcp-use servers update <id-or-slug>` mutates server config in place (production branch, name, description, build/start commands) without deleting and recreating the server — preserving the URL slug and env vars. `--branch` maps to the backend `productionBranch`; `--build-command`/`--start-command` are stored under the server `config`. Pass an empty string to either flag to clear the override (`null` merge-patch on the backend).
+  - `mcp-use deploy` gains `--branch <name>` (defaults to the current git branch) and scopes `--env`/`--env-file` sync to that branch's preview environment.
+  - `mcp-use servers env list/add/update/rm` gain `--branch <name>` for branch-scoped variables, and `update`/`rm` now accept a variable KEY (resolved within the branch scope) in addition to a UUID.
+  - `mcp-use deployments restart` gains `--branch <name>` (defaults to the deployment's branch).
+
+### Patch Changes
+
+- mcp-use@1.31.1-canary.0
+- @mcp-use/inspector@9.0.1-canary.0
+
+## 3.4.2
+
+### Patch Changes
+
+- 4d00a1f: After a `--no-github` (platform-managed) deploy, print a short note explaining that the source lives in a private mcp-use-managed repository (no GitHub remote in the local folder) and link to the dashboard to view it or move it to your own GitHub. Aligns the CLI with the API, which no longer exposes the managed repo's `owner/repo` name.
+- Updated dependencies [4d00a1f]
+- Updated dependencies [4d00a1f]
+  - mcp-use@1.31.0
+  - @mcp-use/inspector@9.0.0
+
+## 3.4.2-canary.1
+
+### Patch Changes
+
+- 4e34b82: After a `--no-github` (platform-managed) deploy, print a short note explaining that the source lives in a private mcp-use-managed repository (no GitHub remote in the local folder) and link to the dashboard to view it or move it to your own GitHub. Aligns the CLI with the API, which no longer exposes the managed repo's `owner/repo` name.
+- Updated dependencies [4e34b82]
+  - mcp-use@1.31.0-canary.1
+  - @mcp-use/inspector@9.0.0-canary.1
+
+## 3.4.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [fd4efb7]
+  - mcp-use@1.30.3-canary.0
+  - @mcp-use/inspector@8.0.3-canary.0
+
+## 3.4.1
+
+### Patch Changes
+
+- Updated dependencies [252d034]
+  - mcp-use@1.30.2
+  - @mcp-use/inspector@8.0.2
+
+## 3.4.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [f9fb29b]
+  - mcp-use@1.30.2-canary.0
+  - @mcp-use/inspector@8.0.2-canary.0
+
+## 3.4.0
+
+### Minor Changes
+
+- c866bda: Add `mcp-use deploy --no-github` to deploy a local MCP server without connecting your own GitHub. The project source is packed into a tarball and uploaded; the server is created in the platform-managed org and deployed through the normal pipeline. Redeploys of a platform-managed project are auto-detected from the linked server, so `--no-github` is only needed on the first deploy.
+
+  Also add `mcp-use login --device-code <code>` for non-interactive authentication with a pre-approved OAuth device code (used by the web onboarding flow), skipping the browser step.
+
+### Patch Changes
+
+- Updated dependencies [c866bda]
+- Updated dependencies [c866bda]
+- Updated dependencies [c866bda]
+  - mcp-use@1.30.1
+  - @mcp-use/inspector@8.0.1
+
+## 3.4.0-canary.3
+
+### Patch Changes
+
+- Updated dependencies [ea4e6f1]
+  - mcp-use@1.30.1-canary.3
+  - @mcp-use/inspector@8.0.1-canary.3
+
+## 3.4.0-canary.2
+
+### Patch Changes
+
+- Updated dependencies [8c00a55]
+  - mcp-use@1.30.1-canary.2
+  - @mcp-use/inspector@8.0.1-canary.2
+
+## 3.4.0-canary.1
+
+### Patch Changes
+
+- Updated dependencies [afb0e79]
+  - @mcp-use/inspector@8.0.1-canary.1
+  - mcp-use@1.30.1-canary.1
+
+## 3.4.0-canary.0
+
+### Minor Changes
+
+- bad4578: Add `mcp-use deploy --no-github` to deploy a local MCP server without connecting your own GitHub. The project source is packed into a tarball and uploaded; the server is created in the platform-managed org and deployed through the normal pipeline. Redeploys of a platform-managed project are auto-detected from the linked server, so `--no-github` is only needed on the first deploy.
+
+  Also add `mcp-use login --device-code <code>` for non-interactive authentication with a pre-approved OAuth device code (used by the web onboarding flow), skipping the browser step.
+
+### Patch Changes
+
+- mcp-use@1.30.1-canary.0
+- @mcp-use/inspector@8.0.1-canary.0
+
+## 3.3.2
+
+### Patch Changes
+
+- 25ae46e: Handle paginated Cloud API responses in `servers list` and `deployments list`, with a default page size of 30 and next-page guidance.
+- 25ae46e: Fix repo access check during deploy to look across all GitHub App installations instead of only the first one, so deploys of repos owned by any linked installation no longer fail the access check.
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+  - mcp-use@1.30.0
+  - @mcp-use/inspector@8.0.0
+
+## 3.3.2-canary.6
+
+### Patch Changes
+
+- 726bcbb: Fix repo access check during deploy to look across all GitHub App installations instead of only the first one, so deploys of repos owned by any linked installation no longer fail the access check.
+  - mcp-use@1.30.0-canary.6
+  - @mcp-use/inspector@8.0.0-canary.6
+
+## 3.3.2-canary.5
+
+### Patch Changes
+
+- Updated dependencies [e4b83e4]
+  - mcp-use@1.30.0-canary.5
+  - @mcp-use/inspector@8.0.0-canary.5
+
+## 3.3.2-canary.4
+
+### Patch Changes
+
+- Updated dependencies [f8ca6bb]
+  - mcp-use@1.30.0-canary.4
+  - @mcp-use/inspector@8.0.0-canary.4
+
+## 3.3.2-canary.3
+
+### Patch Changes
+
+- a3d9aa9: Handle paginated Cloud API responses in `servers list` and `deployments list`, with a default page size of 30 and next-page guidance.
+  - mcp-use@1.30.0-canary.3
+  - @mcp-use/inspector@8.0.0-canary.3
+
+## 3.3.2-canary.2
+
+### Patch Changes
+
+- Updated dependencies [b820e74]
+  - mcp-use@1.30.0-canary.2
+  - @mcp-use/inspector@8.0.0-canary.2
+
+## 3.3.2-canary.1
+
+### Patch Changes
+
+- Updated dependencies [88180d5]
+  - mcp-use@1.30.0-canary.1
+  - @mcp-use/inspector@8.0.0-canary.1
+
+## 3.3.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [f565f9c]
+  - mcp-use@1.30.0-canary.0
+  - @mcp-use/inspector@8.0.0-canary.0
+
 ## 3.3.1
 
 ### Patch Changes

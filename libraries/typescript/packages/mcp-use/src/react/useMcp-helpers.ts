@@ -3,6 +3,14 @@ import type { OAuthClientInformation } from "@modelcontextprotocol/sdk/shared/au
 
 export const USE_MCP_SERVER_NAME = "inspector-server";
 
+/** Human-readable reason when MCP operations run before the client is usable. */
+export function formatMcpNotReadyReason(
+  state: string,
+  hasClient: boolean
+): string {
+  return !hasClient ? `client disconnected (state=${state})` : `state=${state}`;
+}
+
 type OAuthClientConfig = {
   name?: string;
   version?: string;
@@ -69,7 +77,12 @@ export function createBrowserOAuthProvider(params: {
     features: string,
     window: globalThis.Window | null
   ) => void;
-  installFetchInterceptor: boolean;
+  /**
+   * Whether the provider should route OAuth requests through the derived
+   * OAuth proxy (to bypass CORS). The provider exposes this via its scoped
+   * `getProxyFetch()` — it never patches the global `fetch`.
+   */
+  proxyOAuthRequests: boolean;
   staticClientInfo?: OAuthClientInformation;
   scope?: string;
 }): {
@@ -89,13 +102,10 @@ export function createBrowserOAuthProvider(params: {
     oauthProxyUrl,
     connectionUrl: params.gatewayUrl,
     onPopupWindow: params.onPopupWindow,
+    proxyOAuthRequests: params.proxyOAuthRequests,
     staticClientInfo: params.staticClientInfo,
     scope: params.scope,
   });
-
-  if (oauthProxyUrl && params.installFetchInterceptor) {
-    provider.installFetchInterceptor();
-  }
 
   return { provider, oauthProxyUrl };
 }

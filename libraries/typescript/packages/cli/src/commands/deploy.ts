@@ -2,7 +2,11 @@ import chalk from "chalk";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import open from "open";
-import type { GitHubConnectionStatus, OrgInfo } from "../utils/api.js";
+import type {
+  EnvEnvironment,
+  GitHubConnectionStatus,
+  OrgInfo,
+} from "../utils/api.js";
 import {
   ApiUnauthorizedError,
   GitHubAuthRequiredError,
@@ -25,6 +29,7 @@ import {
 } from "../utils/git.js";
 import { getMcpServerUrl } from "../utils/cloud-urls.js";
 import { getProjectLink, saveProjectLink } from "../utils/project-link.js";
+import { packProjectTarball, sanitizeRepoName } from "../utils/tarball.js";
 import {
   loginCommand,
   promptOrgSelection,
@@ -114,12 +119,18 @@ function parseEnvVar(envStr: string): { key: string; value: string } {
 export async function syncEnvVarsToServer(
   api: McpUseAPI,
   serverId: string,
-  envVars: Record<string, string>
+  envVars: Record<string, string>,
+  opts?: { branch?: string; environments?: EnvEnvironment[] }
 ): Promise<{ created: number; updated: number }> {
   const entries = Object.entries(envVars);
   if (entries.length === 0) return { created: 0, updated: 0 };
 
-  const existing = await api.listEnvVariables(serverId);
+  // Scope the sync to the deploy branch's preview env when a branch is given;
+  // otherwise operate on production scope (branch IS NULL), matching prior behavior.
+  const existing = await api.listEnvVariables(
+    serverId,
+    opts?.branch ? { branch: opts.branch } : undefined
+  );
   const byKey = new Map(existing.map((v) => [v.key, v]));
 
   const results = await Promise.all(
@@ -129,7 +140,12 @@ export async function syncEnvVarsToServer(
         await api.updateEnvVariable(serverId, found.id, { value });
         return "updated" as const;
       }
-      await api.createEnvVariable(serverId, { key, value });
+      await api.createEnvVariable(serverId, {
+        key,
+        value,
+        ...(opts?.branch ? { branch: opts.branch } : {}),
+        ...(opts?.environments ? { environments: opts.environments } : {}),
+      });
       return "created" as const;
     })
   );
@@ -194,6 +210,28 @@ interface DeployOptions {
   region?: "US" | "EU" | "APAC";
   buildCommand?: string;
   startCommand?: string;
+  /** Path to a non-default Dockerfile (relative to rootDir / repo root). */
+  dockerfile?: string;
+  /**
+   * Glob patterns limiting which repo changes trigger auto-deploy (monorepos).
+   * Applied only when creating a new GitHub server.
+   */
+  watchPaths?: string[];
+  /**
+   * Hold GitHub auto-deploys until other check runs pass. Applied only when
+   * creating a new GitHub server.
+   */
+  waitForCi?: boolean;
+  /**
+   * Deploy branch. Defaults to the current git branch (managed flow: "main").
+   * Also scopes env-var sync to that branch's preview env.
+   */
+  branch?: string;
+  /**
+   * Upload local source without connecting the user's GitHub. Uses the
+   * platform-managed org and a tarball instead of pushing to a user repo.
+   */
+  noGithub?: boolean;
 }
 
 async function isMcpProject(cwd: string = process.cwd()): Promise<boolean> {
@@ -551,15 +589,35 @@ async function checkRepoAccess(
   owner: string,
   repo: string
 ): Promise<boolean> {
-  try {
-    const resp = await api.getGitHubRepos(true);
-    return resp.repos.some((r) => r.full_name === `${owner}/${repo}`);
-  } catch {
-    return false;
-  }
+  return api.checkGitHubRepoAccess(owner, repo);
 }
 
-async function promptGitHubInstallation(
+/** The GitHub App installation page for the given app slug. */
+export function gitHubInstallUrl(appName: string): string {
+  return `https://github.com/apps/${appName}/installations/new`;
+}
+
+/**
+ * How the GitHub App installation step should behave, given the `--yes` flag
+ * and whether stdin is an interactive TTY.
+ *
+ * - `auto`: caller passed `--yes`; open the browser and poll for completion.
+ * - `interactive`: a TTY is attached; ask the user before opening the browser.
+ * - `non-interactive`: no TTY and no `--yes` (an agent or CI). We can't block on
+ *   a prompt that will never be answered, so the caller prints the install URL
+ *   and bails cleanly instead of hanging.
+ */
+type InstallFlowMode = "auto" | "interactive" | "non-interactive";
+
+export function resolveInstallFlowMode(opts: {
+  yes: boolean;
+  isTTY: boolean;
+}): InstallFlowMode {
+  if (opts.yes) return "auto";
+  return opts.isTTY ? "interactive" : "non-interactive";
+}
+
+export async function promptGitHubInstallation(
   api: McpUseAPI,
   reason: "not_connected" | "no_access",
   repoName?: string,
@@ -571,58 +629,95 @@ async function promptGitHubInstallation(
 ): Promise<{ ok: boolean; api: McpUseAPI }> {
   const yes = !!opts?.yes;
   const reauth = opts?.reauth;
-  console.log();
+  const noAccess = reason === "no_access";
+  let client = api;
 
-  if (reason === "not_connected") {
-    console.log(chalk.yellow("⚠️  GitHub account not connected"));
-    console.log(
-      chalk.white("Deployments require a connected GitHub account.\n")
-    );
-  } else {
+  // Resolve the install URL up front so it is ALWAYS surfaced — before any
+  // prompt, and regardless of whether stdin is interactive. This is the single
+  // actionable step that fixes a missing or incomplete GitHub App installation,
+  // and an agent or CI run needs to see it without answering a prompt.
+  let appName: string;
+  for (;;) {
+    try {
+      appName = await client.getGitHubAppName();
+      break;
+    } catch (e) {
+      if (e instanceof ApiUnauthorizedError && reauth) {
+        client = await reauth();
+        await client.testAuth();
+        continue;
+      }
+      throw e;
+    }
+  }
+  const installUrl = gitHubInstallUrl(appName);
+
+  console.log();
+  if (noAccess) {
     console.log(
       chalk.yellow("⚠️  GitHub App doesn't have access to this repository")
     );
     console.log(
       chalk.white(
-        `The GitHub App needs permission to access ${chalk.cyan(repoName || "this repository")}.\n`
+        `The GitHub App needs permission to access ${chalk.cyan(repoName || "this repository")}.`
+      )
+    );
+  } else {
+    console.log(chalk.yellow("⚠️  GitHub account not connected"));
+    console.log(chalk.white("Deployments require a connected GitHub account."));
+  }
+
+  // Always print the install URL so it is actionable even when the prompt is
+  // declined or stdin is non-interactive.
+  console.log(
+    chalk.white(
+      `\nInstall${noAccess ? " / configure" : ""} the GitHub App to continue:`
+    )
+  );
+  console.log(chalk.cyan.bold(`  ${installUrl}`));
+  if (noAccess) {
+    console.log(
+      chalk.gray(
+        `  Grant access to ${repoName || "your repository"} on the app's settings page.`
       )
     );
   }
 
-  const shouldInstall = yes
-    ? true
-    : await prompt(
-        chalk.white(
-          `Would you like to ${reason === "not_connected" ? "connect" : "configure"} GitHub now? (Y/n): `
-        ),
-        "y"
+  const mode = resolveInstallFlowMode({ yes, isTTY: !!process.stdin.isTTY });
+
+  if (mode === "non-interactive") {
+    // An agent or CI: don't block on a prompt that can't be answered. The URL
+    // is already printed above; tell the caller what to do next and bail.
+    console.log(
+      chalk.white(
+        `\nOpen the URL above to install the GitHub App, then re-run ${chalk.cyan("mcp-use deploy")}.`
+      )
+    );
+    return { ok: false, api: client };
+  }
+
+  if (mode === "interactive") {
+    const shouldInstall = await prompt(
+      chalk.white(
+        `\nWould you like to ${noAccess ? "configure" : "connect"} GitHub now? (Y/n): `
+      ),
+      "y"
+    );
+    if (!shouldInstall) {
+      console.log(
+        chalk.gray(
+          `\nOpen the URL above when ready, then re-run ${chalk.cyan("mcp-use deploy")}.`
+        )
       );
-  if (!shouldInstall) return { ok: false, api };
-
-  let client = api;
-
-  try {
-    let appName: string;
-    for (;;) {
-      try {
-        appName = await client.getGitHubAppName();
-        break;
-      } catch (e) {
-        if (e instanceof ApiUnauthorizedError && reauth) {
-          client = await reauth();
-          await client.testAuth();
-          continue;
-        }
-        throw e;
-      }
+      return { ok: false, api: client };
     }
+  }
 
-    const installUrl = `https://github.com/apps/${appName}/installations/new`;
-
+  // mode === "auto" (--yes), or interactive with a confirmed "yes": open the
+  // browser to the install page.
+  try {
     console.log(chalk.cyan(`\nOpening browser...`));
-    console.log(chalk.gray(`URL: ${installUrl}\n`));
-
-    if (reason === "no_access") {
+    if (noAccess) {
       console.log(
         chalk.white("Please add ") +
           chalk.cyan.bold(repoName || "your repository") +
@@ -636,7 +731,7 @@ async function promptGitHubInstallation(
 
     await open(installUrl);
 
-    if (!yes) {
+    if (mode === "interactive") {
       await prompt(chalk.white("Press Enter when done..."), "y");
     } else {
       console.log(chalk.gray("Waiting for GitHub configuration (polling)..."));
@@ -670,10 +765,160 @@ async function promptGitHubInstallation(
     }
     console.log(chalk.yellow("\n⚠️  Unable to open browser automatically"));
     console.log(
-      chalk.white("Please visit: ") +
-        chalk.cyan("https://manufact.com/cloud/settings")
+      chalk.white("Please open the URL above: ") + chalk.cyan(installUrl)
     );
     return { ok: false, api: client };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Managed deploy (no user GitHub) — upload local source as a tarball
+// ---------------------------------------------------------------------------
+
+/**
+ * Deploy the local project directly via the platform-managed GitHub org. No
+ * user GitHub connection, no git remote — the source is packed into a tarball
+ * and uploaded. Reuses the project link for redeploys (push source + redeploy).
+ */
+async function deployViaManagedUpload(
+  api: McpUseAPI,
+  options: DeployOptions,
+  ctx: { cwd: string; organizationId: string }
+): Promise<void> {
+  const { cwd, organizationId } = ctx;
+  const projectDir = options.rootDir ? path.resolve(cwd, options.rootDir) : cwd;
+
+  try {
+    await fs.access(projectDir);
+  } catch {
+    console.log(chalk.red(`✗ Project directory not found: ${projectDir}`));
+    process.exit(1);
+  }
+
+  const isMcp = await isMcpProject(projectDir);
+  if (!isMcp && !options.yes) {
+    console.log(
+      chalk.yellow("⚠️  This doesn't look like an MCP server project.")
+    );
+    const shouldContinue = await prompt(
+      chalk.white("Continue anyway? (y/n): ")
+    );
+    if (!shouldContinue) process.exit(0);
+    console.log();
+  }
+
+  const envVars = await buildEnvVars(options);
+  const branch = options.branch || "main";
+  const projectName = options.name || (await getProjectName(projectDir));
+
+  console.log(chalk.gray("Packaging project source..."));
+  const tarball = await packProjectTarball(projectDir);
+  console.log(
+    chalk.gray(
+      `  Archive size: ${(tarball.length / 1024 / 1024).toFixed(2)} MB`
+    )
+  );
+  if (tarball.length > 80 * 1024 * 1024) {
+    console.log(
+      chalk.red(
+        "✗ Project archive exceeds 80 MB. Add large/derived files to .gitignore and retry."
+      )
+    );
+    process.exit(1);
+  }
+
+  // Redeploy an existing managed server when linked (keeps the same URL).
+  const existingLink = !options.new ? await getProjectLink(cwd) : null;
+  let serverId = existingLink?.serverId;
+  if (serverId) {
+    try {
+      const linked = await api.getServer(serverId);
+      if (linked.organizationId !== organizationId) serverId = undefined;
+    } catch {
+      serverId = undefined;
+    }
+  }
+
+  let deploymentId: string | undefined;
+
+  if (serverId) {
+    console.log(chalk.gray("Uploading source and redeploying..."));
+    if (Object.keys(envVars).length > 0) {
+      await syncEnvVarsToServer(
+        api,
+        serverId,
+        envVars,
+        options.branch ? { branch: options.branch } : undefined
+      );
+    }
+    await api.pushSourceToServer(serverId, {
+      tarball,
+      branch,
+      commitMessage: "Redeploy from mcp-use CLI",
+    });
+    const dep = await api.createDeployment({
+      serverId,
+      branch,
+      trigger: "redeploy",
+    });
+    deploymentId = dep.id;
+    await saveProjectLink(cwd, {
+      deploymentId: dep.id,
+      deploymentName: projectName,
+      serverId,
+      linkedAt: new Date().toISOString(),
+    });
+  } else {
+    console.log(chalk.gray("Uploading source (no GitHub required)..."));
+    const result = await api.createServerFromManagedUpload({
+      organizationId,
+      name: projectName,
+      repoName: sanitizeRepoName(projectName),
+      tarball,
+      branch,
+      commitMessage: "Deploy from mcp-use CLI",
+      port: options.port,
+      env: Object.keys(envVars).length > 0 ? envVars : undefined,
+    });
+    deploymentId = result.deploymentId ?? undefined;
+    if (result.server?.id) serverId = result.server.id;
+    if (result.server?.id && deploymentId) {
+      await saveProjectLink(cwd, {
+        deploymentId,
+        deploymentName: projectName,
+        serverId: result.server.id,
+        linkedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (!deploymentId) {
+    console.log(chalk.red("✗ No deployment was created."));
+    process.exit(1);
+  }
+
+  console.log(chalk.green("✓ Deployment created: ") + chalk.gray(deploymentId));
+  await displayDeploymentProgress(api, deploymentId, { yes: options.yes });
+
+  // No git remote was created for this folder (--no-github). Explain where the
+  // source actually lives so users/agents don't go looking for a local remote
+  // or a GitHub repo they can't open.
+  console.log();
+  console.log(
+    chalk.gray(
+      "Source is stored in a private mcp-use-managed repository (no GitHub remote in this folder)."
+    )
+  );
+  if (serverId) {
+    const webUrl = (await getWebUrl()).replace(/\/$/, "");
+    const config = await readConfig();
+    const settingsUrl = config.orgSlug
+      ? `${webUrl}/cloud/${config.orgSlug}/servers/${serverId}`
+      : `${webUrl}/cloud/servers/${serverId}`;
+    console.log(
+      chalk.gray("View it or move it to your own GitHub from the dashboard: ") +
+        chalk.cyan(settingsUrl)
+    );
   }
 }
 
@@ -811,6 +1056,28 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
 
     console.log(chalk.cyan.bold("\n🚀 Deploying to Manufact cloud...\n"));
 
+    // ── No-GitHub deploy: upload local source via platform-managed org ──
+    // Explicit via --no-github, or auto-detected when redeploying a project
+    // already linked to a platform-managed server (--no-github not needed again).
+    let useNoGithubDeploy = !!options.noGithub;
+    if (!useNoGithubDeploy && !options.new) {
+      const link = await getProjectLink(cwd);
+      if (link?.serverId) {
+        try {
+          const linked = await api.getServer(link.serverId);
+          if (linked.connectedRepository?.isManaged) useNoGithubDeploy = true;
+        } catch {
+          // Server gone / inaccessible — fall through to the normal flow.
+        }
+      }
+    }
+    if (useNoGithubDeploy) {
+      const organizationId =
+        resolvedOrgId ?? (await api.resolveOrganizationId());
+      await deployViaManagedUpload(api, options, { cwd, organizationId });
+      return;
+    }
+
     // ── Step 3: GitHub connection ─────────────────────────────────
     const reauth = () => promptReauthenticateOn401(options, resolvedOrgId);
 
@@ -899,7 +1166,7 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
 
     let gitInfo = await getGitInfo(cwd);
     let repoFullName: string | undefined;
-    let branch: string = "main";
+    let branch: string = options.branch || "main";
 
     if (!gitInfo.isGitRepo || !gitInfo.remoteUrl) {
       // No git repo or no remote — offer to create one
@@ -1097,7 +1364,7 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
 
       gitInfo = await getGitInfo(cwd);
       repoFullName = repoResult.fullName;
-      branch = gitInfo.branch || "main";
+      branch = options.branch || gitInfo.branch || "main";
     } else if (!isGitHubUrl(gitInfo.remoteUrl!)) {
       console.log(chalk.red("✗ Remote is not a GitHub repository"));
       console.log(chalk.yellow(`   Current remote: ${gitInfo.remoteUrl}\n`));
@@ -1107,7 +1374,7 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
       process.exit(1);
     } else {
       repoFullName = `${gitInfo.owner}/${gitInfo.repo}`;
-      branch = gitInfo.branch || "main";
+      branch = options.branch || gitInfo.branch || "main";
 
       // Resolve installation matching the repo owner
       const ownerLower = gitInfo.owner!.toLowerCase();
@@ -1181,11 +1448,7 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
               `\n✗ Repository ${chalk.cyan(repoFullName)} is still not accessible.`
             )
           );
-          console.log(
-            chalk.cyan(
-              `  https://github.com/apps/${appName}/installations/new\n`
-            )
-          );
+          console.log(chalk.cyan(`  ${gitHubInstallUrl(appName)}\n`));
           process.exit(1);
         }
       }
@@ -1209,6 +1472,10 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
     console.log(chalk.gray(`  Port:          `) + chalk.cyan(port));
     if (options.region)
       console.log(chalk.gray(`  Region:        `) + chalk.cyan(options.region));
+    if (options.dockerfile)
+      console.log(
+        chalk.gray(`  Dockerfile:    `) + chalk.cyan(options.dockerfile)
+      );
     if (options.buildCommand)
       console.log(
         chalk.gray(`  Build command: `) + chalk.cyan(options.buildCommand)
@@ -1277,7 +1544,12 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
           console.log(chalk.cyan(`  URL: ${getMcpServerUrl(existingDep)}\n`));
 
           if (Object.keys(envVars).length > 0) {
-            const synced = await syncEnvVarsToServer(api, serverId, envVars);
+            const synced = await syncEnvVarsToServer(
+              api,
+              serverId,
+              envVars,
+              options.branch ? { branch: options.branch } : undefined
+            );
             console.log(
               chalk.green(
                 `✓ Synced ${synced.created + synced.updated} environment variable(s)` +
@@ -1334,7 +1606,12 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
 
     if (serverId) {
       if (Object.keys(envVars).length > 0) {
-        const synced = await syncEnvVarsToServer(api, serverId, envVars);
+        const synced = await syncEnvVarsToServer(
+          api,
+          serverId,
+          envVars,
+          options.branch ? { branch: options.branch } : undefined
+        );
         console.log(
           chalk.green(
             `✓ Synced ${synced.created + synced.updated} environment variable(s)` +
@@ -1396,6 +1673,9 @@ export async function deployCommand(options: DeployOptions): Promise<void> {
         region: options.region,
         buildCommand: options.buildCommand,
         startCommand: options.startCommand,
+        dockerfilePath: options.dockerfile,
+        watchPaths: options.watchPaths,
+        waitForCi: options.waitForCi,
       });
 
       deploymentId = serverResult.deploymentId ?? "";

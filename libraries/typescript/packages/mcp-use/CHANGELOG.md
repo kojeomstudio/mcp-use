@@ -1,5 +1,728 @@
 # mcp-use
 
+## 1.33.0
+
+### Minor Changes
+
+- 430178c: feat(server): enforce `outputSchema` at the tool return position, and make templates score 100% on the publishing checklist (MCP-2260)
+  - `mcp-use`: a tool's `outputSchema` is now type-checked at the return position with no new API. Returning `object({...})` (or `widget({ props })`, whose props become the result's `structuredContent`) with a shape that does not match `outputSchema` is a compile-time error, while content-only helpers (`text()`, `markdown()`, `image()`, ...) are always allowed. This is achieved by typing content helpers as a new `ToolContentResult` (no `structuredContent`) and making `widget()` generic over its props. Note: returning `mix()` carrying structured content, or a raw object literal whose `structuredContent` does not match, against a tool that declares `outputSchema` now errors (use `object()` or align the shape).
+  - `mcp-use`: the Apps SDK adapter auto-derives `openai/widgetDescription` from the widget's `description` when it isn't set explicitly, so hosts (and the publishing checklist) always see a widget description.
+  - `create-mcp-use-app` (`starter`): `fetch-weather` declares a `title` and an `outputSchema`, returning matching `structuredContent` via `object()`.
+  - `create-mcp-use-app` (`mcp-apps`): `search-tools` and `get-fruit-details` declare a `title`, and the `product-search-result` widget declares a `domain` (widget description is auto-derived from its `description`).
+
+### Patch Changes
+
+- 430178c: fix(inspector): default connections to Auto mode with proxy fallback
+
+  The Inspector connection form no longer asks users to choose between Direct and
+  Via Proxy before connecting. New connections use Auto mode by default: the
+  Inspector tries a direct browser connection first, then falls back to the
+  configured Inspector proxy when direct connection fails because of CORS or other
+  proxy-resolvable connection errors.
+
+  Direct and Proxy are still available as advanced connection mode overrides in
+  the Configuration dialog, alongside the editable Proxy Endpoint. The Inspector
+  also preserves legacy `connectionType` configs while writing the new
+  `connectionMode` field.
+
+  `useMcp` now applies the runtime proxy config after automatic fallback when it
+  derives gateway URLs and headers, so fallback retries route through the proxy
+  instead of continuing to use the original direct transport config.
+
+- 430178c: Updated dependency `vite` to `^8.0.16`.
+- 430178c: exposed the cwd argument for stdio
+- 430178c: Bump hono from 4.12.23 to 4.12.25.
+- 430178c: Use the MCP Apps bridge as the primary widget runtime even when `window.openai` is present, while keeping OpenAI extension APIs such as file upload and download available through `useFiles`.
+- 430178c: fix(inspector): scope OAuth proxy fetch per server configuration
+
+  The browser OAuth provider previously installed a global `window.fetch`
+  interceptor to route OAuth requests through the inspector proxy. With multiple
+  servers, connecting one server "Via Proxy" mutated `fetch` for the entire page,
+  so other servers (including ones set to "Direct") and unrelated requests were
+  affected, and switching a server from "Via Proxy" back to "Direct" could leave a
+  stale interceptor behind.
+
+  `BrowserOAuthClientProvider` now exposes a scoped `getProxyFetch()` that returns
+  a `fetch` confined to a single provider. It is passed only to that server's SDK
+  transport and `auth()` calls (via the SDK's `fetch` / `fetchFn` options), so
+  OAuth-proxy behavior is scoped to the selected server's connection and the
+  global `fetch` is never mutated.
+
+- 430178c: Fix `useWidget` breaking Apps SDK-only widgets. The MCP Apps bridge remains the primary runtime, but `window.openai` (Apps SDK) is now used as a compatibility fallback when the bridge does not connect, instead of being dropped entirely. Previously, any widget iframe whose host only spoke the Apps SDK (e.g. a ChatGPT widget without MCP Apps support) stayed stuck on the loading spinner because `useWidget` ignored `window.openai` data. A connected MCP Apps bridge still always wins, so ChatGPT continues to use MCP Apps as the source of truth.
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+  - @mcp-use/inspector@11.0.0
+  - @mcp-use/cli@3.6.0
+
+## 1.33.0-canary.14
+
+### Patch Changes
+
+- 7455d7a: fix(inspector): default connections to Auto mode with proxy fallback
+
+  The Inspector connection form no longer asks users to choose between Direct and
+  Via Proxy before connecting. New connections use Auto mode by default: the
+  Inspector tries a direct browser connection first, then falls back to the
+  configured Inspector proxy when direct connection fails because of CORS or other
+  proxy-resolvable connection errors.
+
+  Direct and Proxy are still available as advanced connection mode overrides in
+  the Configuration dialog, alongside the editable Proxy Endpoint. The Inspector
+  also preserves legacy `connectionType` configs while writing the new
+  `connectionMode` field.
+
+  `useMcp` now applies the runtime proxy config after automatic fallback when it
+  derives gateway URLs and headers, so fallback retries route through the proxy
+  instead of continuing to use the original direct transport config.
+
+- Updated dependencies [7455d7a]
+  - @mcp-use/inspector@11.0.0-canary.14
+  - @mcp-use/cli@3.6.0-canary.14
+
+## 1.33.0-canary.13
+
+### Patch Changes
+
+- 1bd3f8d: fix(inspector): scope OAuth proxy fetch per server configuration
+
+  The browser OAuth provider previously installed a global `window.fetch`
+  interceptor to route OAuth requests through the inspector proxy. With multiple
+  servers, connecting one server "Via Proxy" mutated `fetch` for the entire page,
+  so other servers (including ones set to "Direct") and unrelated requests were
+  affected, and switching a server from "Via Proxy" back to "Direct" could leave a
+  stale interceptor behind.
+
+  `BrowserOAuthClientProvider` now exposes a scoped `getProxyFetch()` that returns
+  a `fetch` confined to a single provider. It is passed only to that server's SDK
+  transport and `auth()` calls (via the SDK's `fetch` / `fetchFn` options), so
+  OAuth-proxy behavior is scoped to the selected server's connection and the
+  global `fetch` is never mutated.
+  - @mcp-use/cli@3.6.0-canary.13
+  - @mcp-use/inspector@11.0.0-canary.13
+
+## 1.33.0-canary.12
+
+### Patch Changes
+
+- 0027695: Fix `useWidget` breaking Apps SDK-only widgets. The MCP Apps bridge remains the primary runtime, but `window.openai` (Apps SDK) is now used as a compatibility fallback when the bridge does not connect, instead of being dropped entirely. Previously, any widget iframe whose host only spoke the Apps SDK (e.g. a ChatGPT widget without MCP Apps support) stayed stuck on the loading spinner because `useWidget` ignored `window.openai` data. A connected MCP Apps bridge still always wins, so ChatGPT continues to use MCP Apps as the source of truth.
+  - @mcp-use/cli@3.6.0-canary.12
+  - @mcp-use/inspector@11.0.0-canary.12
+
+## 1.33.0-canary.11
+
+### Patch Changes
+
+- Updated dependencies [979e6b8]
+  - @mcp-use/cli@3.6.0-canary.11
+  - @mcp-use/inspector@11.0.0-canary.11
+
+## 1.33.0-canary.10
+
+### Minor Changes
+
+- 84e9c7d: feat(server): enforce `outputSchema` at the tool return position, and make templates score 100% on the publishing checklist (MCP-2260)
+  - `mcp-use`: a tool's `outputSchema` is now type-checked at the return position with no new API. Returning `object({...})` (or `widget({ props })`, whose props become the result's `structuredContent`) with a shape that does not match `outputSchema` is a compile-time error, while content-only helpers (`text()`, `markdown()`, `image()`, ...) are always allowed. This is achieved by typing content helpers as a new `ToolContentResult` (no `structuredContent`) and making `widget()` generic over its props. Note: returning `mix()` carrying structured content, or a raw object literal whose `structuredContent` does not match, against a tool that declares `outputSchema` now errors (use `object()` or align the shape).
+  - `mcp-use`: the Apps SDK adapter auto-derives `openai/widgetDescription` from the widget's `description` when it isn't set explicitly, so hosts (and the publishing checklist) always see a widget description.
+  - `create-mcp-use-app` (`starter`): `fetch-weather` declares a `title` and an `outputSchema`, returning matching `structuredContent` via `object()`.
+  - `create-mcp-use-app` (`mcp-apps`): `search-tools` and `get-fruit-details` declare a `title`, and the `product-search-result` widget declares a `domain` (widget description is auto-derived from its `description`).
+
+### Patch Changes
+
+- @mcp-use/cli@3.5.3-canary.10
+- @mcp-use/inspector@11.0.0-canary.10
+
+## 1.32.2-canary.9
+
+### Patch Changes
+
+- Updated dependencies [8dfac9c]
+  - @mcp-use/inspector@10.0.2-canary.9
+  - @mcp-use/cli@3.5.3-canary.9
+
+## 1.32.2-canary.8
+
+### Patch Changes
+
+- bf90128: exposed the cwd argument for stdio
+  - @mcp-use/cli@3.5.3-canary.8
+  - @mcp-use/inspector@10.0.2-canary.8
+
+## 1.32.2-canary.7
+
+### Patch Changes
+
+- Updated dependencies [37337f3]
+  - @mcp-use/inspector@10.0.2-canary.7
+  - @mcp-use/cli@3.5.3-canary.7
+
+## 1.32.2-canary.6
+
+### Patch Changes
+
+- Updated dependencies [d639509]
+  - @mcp-use/cli@3.5.3-canary.6
+  - @mcp-use/inspector@10.0.2-canary.6
+
+## 1.32.2-canary.5
+
+### Patch Changes
+
+- Updated dependencies [dfa7562]
+  - @mcp-use/cli@3.5.3-canary.5
+  - @mcp-use/inspector@10.0.2-canary.5
+
+## 1.32.2-canary.4
+
+### Patch Changes
+
+- b9324be: Use the MCP Apps bridge as the primary widget runtime even when `window.openai` is present, while keeping OpenAI extension APIs such as file upload and download available through `useFiles`.
+  - @mcp-use/cli@3.5.3-canary.4
+  - @mcp-use/inspector@10.0.2-canary.4
+
+## 1.32.2-canary.3
+
+### Patch Changes
+
+- Updated dependencies [e1bcc3f]
+  - @mcp-use/inspector@10.0.2-canary.3
+  - @mcp-use/cli@3.5.3-canary.3
+
+## 1.32.2-canary.2
+
+### Patch Changes
+
+- c62e103: Updated dependency `vite` to `^8.0.16`.
+- Updated dependencies [c62e103]
+  - @mcp-use/cli@3.5.3-canary.2
+  - @mcp-use/inspector@10.0.2-canary.2
+
+## 1.32.2-canary.1
+
+### Patch Changes
+
+- Updated dependencies [d962eab]
+  - @mcp-use/cli@3.5.3-canary.1
+  - @mcp-use/inspector@10.0.2-canary.1
+
+## 1.32.2-canary.0
+
+### Patch Changes
+
+- c242a0c: Bump hono from 4.12.23 to 4.12.25.
+  - @mcp-use/cli@3.5.3-canary.0
+  - @mcp-use/inspector@10.0.2-canary.0
+
+## 1.32.1
+
+### Patch Changes
+
+- efa7fe7: Updated dependency `esbuild` to `0.28.1`.
+- efa7fe7: Fix OAuth metadata discovery for authorization servers with path-suffix issuers (RFC 8414). Construct the upstream OAuth and OpenID metadata URLs correctly and additionally mount the canonical `/.well-known/oauth-authorization-server{issuer-path}` route. Closes #1576.
+- efa7fe7: OAuth proxy mode now brokers the upstream callback through the server's own `/oauth/callback` instead of forwarding each MCP client's redirect URI upstream. Register a single redirect URI on your OAuth provider — `<your-server-domain>/oauth/callback` — and every MCP client (Claude, ChatGPT, the inspector, ...) can authenticate without registering its own callback. The client's redirect URI and state are carried statelessly through the upstream `state` parameter, PKCE stays end-to-end between the client and the upstream, and `/token` rewrites `redirect_uri` to match the brokered authorize request.
+
+  If you previously registered client callback URLs (e.g. `http://localhost:3000/inspector/oauth/callback`) on your provider, add `<your-server-domain>/oauth/callback` instead.
+
+- efa7fe7: Add server-side logging for outgoing notifications, printing detailed logs for sent and failed notifications with session identifiers and error details.
+- efa7fe7: Silence dev-mode widget startup logs when a project has no widgets. An empty or
+  absent `resources/` directory no longer prints the `[WIDGETS]` mounting/serving/
+  watching messages. The Vite watcher still starts so widgets created later (e.g.
+  Mango/E2B sandboxes) are picked up and logged when they appear.
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+  - @mcp-use/cli@3.5.2
+  - @mcp-use/inspector@10.0.1
+
+## 1.32.1-canary.14
+
+### Patch Changes
+
+- Updated dependencies [7126253]
+  - @mcp-use/cli@3.5.2-canary.14
+  - @mcp-use/inspector@10.0.1-canary.14
+
+## 1.32.1-canary.13
+
+### Patch Changes
+
+- Updated dependencies [ab4fcd2]
+  - @mcp-use/cli@3.5.2-canary.13
+  - @mcp-use/inspector@10.0.1-canary.13
+
+## 1.32.1-canary.12
+
+### Patch Changes
+
+- c9e1696: OAuth proxy mode now brokers the upstream callback through the server's own `/oauth/callback` instead of forwarding each MCP client's redirect URI upstream. Register a single redirect URI on your OAuth provider — `<your-server-domain>/oauth/callback` — and every MCP client (Claude, ChatGPT, the inspector, ...) can authenticate without registering its own callback. The client's redirect URI and state are carried statelessly through the upstream `state` parameter, PKCE stays end-to-end between the client and the upstream, and `/token` rewrites `redirect_uri` to match the brokered authorize request.
+
+  If you previously registered client callback URLs (e.g. `http://localhost:3000/inspector/oauth/callback`) on your provider, add `<your-server-domain>/oauth/callback` instead.
+  - @mcp-use/cli@3.5.2-canary.12
+  - @mcp-use/inspector@10.0.1-canary.12
+
+## 1.32.1-canary.11
+
+### Patch Changes
+
+- Updated dependencies [048ec9c]
+  - @mcp-use/cli@3.5.2-canary.11
+  - @mcp-use/inspector@10.0.1-canary.11
+
+## 1.32.1-canary.10
+
+### Patch Changes
+
+- Updated dependencies [8849f0f]
+  - @mcp-use/cli@3.5.2-canary.10
+  - @mcp-use/inspector@10.0.1-canary.10
+
+## 1.32.1-canary.9
+
+### Patch Changes
+
+- Updated dependencies [cdc3b13]
+  - @mcp-use/cli@3.5.2-canary.9
+  - @mcp-use/inspector@10.0.1-canary.9
+
+## 1.32.1-canary.8
+
+### Patch Changes
+
+- Updated dependencies [afe0806]
+  - @mcp-use/cli@3.5.2-canary.8
+  - @mcp-use/inspector@10.0.1-canary.8
+
+## 1.32.1-canary.7
+
+### Patch Changes
+
+- Updated dependencies [1fb87d2]
+  - @mcp-use/inspector@10.0.1-canary.7
+  - @mcp-use/cli@3.5.2-canary.7
+
+## 1.32.1-canary.6
+
+### Patch Changes
+
+- 6e7e9bf: Silence dev-mode widget startup logs when a project has no widgets. An empty or
+  absent `resources/` directory no longer prints the `[WIDGETS]` mounting/serving/
+  watching messages. The Vite watcher still starts so widgets created later (e.g.
+  Mango/E2B sandboxes) are picked up and logged when they appear.
+  - @mcp-use/cli@3.5.2-canary.6
+  - @mcp-use/inspector@10.0.1-canary.6
+
+## 1.32.1-canary.5
+
+### Patch Changes
+
+- 1a16878: Updated dependency `esbuild` to `0.28.1`.
+- Updated dependencies [1a16878]
+  - @mcp-use/cli@3.5.2-canary.5
+  - @mcp-use/inspector@10.0.1-canary.5
+
+## 1.32.1-canary.4
+
+### Patch Changes
+
+- Updated dependencies [72efb63]
+  - @mcp-use/cli@3.5.2-canary.4
+  - @mcp-use/inspector@10.0.1-canary.4
+
+## 1.32.1-canary.3
+
+### Patch Changes
+
+- Updated dependencies [2038e04]
+  - @mcp-use/inspector@10.0.1-canary.3
+  - @mcp-use/cli@3.5.2-canary.3
+
+## 1.32.1-canary.2
+
+### Patch Changes
+
+- 8d626cb: Fix OAuth metadata discovery for authorization servers with path-suffix issuers (RFC 8414). Construct the upstream OAuth and OpenID metadata URLs correctly and additionally mount the canonical `/.well-known/oauth-authorization-server{issuer-path}` route. Closes #1576.
+  - @mcp-use/cli@3.5.2-canary.2
+  - @mcp-use/inspector@10.0.1-canary.2
+
+## 1.32.1-canary.1
+
+### Patch Changes
+
+- a3f3b65: Add server-side logging for outgoing notifications, printing detailed logs for sent and failed notifications with session identifiers and error details.
+  - @mcp-use/cli@3.5.2-canary.1
+  - @mcp-use/inspector@10.0.1-canary.1
+
+## 1.32.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [d64db0f]
+  - @mcp-use/cli@3.5.2-canary.0
+  - @mcp-use/inspector@10.0.1-canary.0
+
+## 1.32.0
+
+### Minor Changes
+
+- 5b4afc8: Expose the resolved OAuth `token_endpoint` on `useMcp().authTokens` (and add `getTokenEndpoint()` to the browser OAuth provider / session store). This lets consumers persist the token endpoint alongside the access/refresh tokens so a backend can proactively refresh the token before it expires. The field is additive and optional — existing usage is unaffected.
+
+### Patch Changes
+
+- @mcp-use/cli@3.5.1
+- @mcp-use/inspector@10.0.0
+
+## 1.32.0-canary.0
+
+### Minor Changes
+
+- a683d43: Expose the resolved OAuth `token_endpoint` on `useMcp().authTokens` (and add `getTokenEndpoint()` to the browser OAuth provider / session store). This lets consumers persist the token endpoint alongside the access/refresh tokens so a backend can proactively refresh the token before it expires. The field is additive and optional — existing usage is unaffected.
+
+### Patch Changes
+
+- @mcp-use/cli@3.5.1-canary.0
+- @mcp-use/inspector@10.0.0-canary.0
+
+## 1.31.1
+
+### Patch Changes
+
+- Updated dependencies [0fb1868]
+  - @mcp-use/cli@3.5.0
+  - @mcp-use/inspector@9.0.1
+
+## 1.31.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [673a142]
+  - @mcp-use/cli@3.5.0-canary.0
+  - @mcp-use/inspector@9.0.1-canary.0
+
+## 1.31.0
+
+### Minor Changes
+
+- 4d00a1f: fix(react/auth): opener-owned OAuth popup flow so connections never get stuck in "authenticating"
+
+  The browser OAuth popup handoff was fire-and-forget: `authenticate()` opened the
+  popup and then relied on a single `mcp_auth_callback` push message from the
+  callback page to leave the `authenticating` state. Any lost message (popup
+  closed early, severed `window.opener` under COOP, partitioned BroadcastChannel,
+  or a provider remount racing the callback) stranded the UI on "Authenticating…"
+  until a hard refresh — even though tokens were already persisted.
+
+  Adopt the pattern used by mature browser OAuth libraries (auth0-spa-js,
+  oidc-client-ts, msal-browser): the window that opens the popup owns a promise
+  that always settles on one of four outcomes.
+  - New `runAuthPopup()` helper (exported from `mcp-use/auth`) settles on the
+    first of: a `state`-matched result message (postMessage **or**
+    BroadcastChannel), the popup being closed, a `storage` event for the flow's
+    tokens key (robust to severed/partitioned channels), or a timeout. The close
+    and timeout paths check persisted tokens before declaring
+    cancelled/timeout, so a "missed message but tokens landed" case still
+    succeeds.
+  - `useMcp().authenticate()` now awaits `runAuthPopup()` and owns every state
+    transition: success reconnects, cancelled/timeout return to `pending_auth`
+    (re-enabling the Authenticate button), and error fails the connection.
+  - The OAuth callback page stamps result payloads with the originating `state`
+    and `serverUrlHash`. The always-on callback listener now scopes results to
+    the right server and won't clobber an already-`ready` connection with a late
+    failure message.
+
+  fix(react): stop wiping OAuth credentials on routine lifecycle churn
+
+  Persisted OAuth credentials (tokens / client_info / PKCE verifier) are user
+  state, not connection state, and were being destroyed by ordinary lifecycle
+  events — silently logging users out and (when a popup completed after a
+  remount) breaking the flow entirely.
+  - `McpClientProvider`'s `removeServer(id)` no longer clears OAuth storage by
+    default. Pass `removeServer(id, { clearCredentials: true })` for an explicit
+    logout / "forget this server" action (the Inspector's delete-server button
+    now does). This is a behavior change to `removeServer`; the signature stays
+    backward compatible.
+  - `updateServer()` no longer clears OAuth storage — editing options is not a
+    logout. It still remounts to apply the new options.
+  - `useMcp` no longer wipes OAuth storage on unmount mid-flow. Stale
+    authorization state records already expire via their 10-minute TTL and the
+    PKCE verifier is overwritten on the next auth start, so a popup completing
+    after a wrapper remount now lands cleanly.
+
+### Patch Changes
+
+- 4d00a1f: Move chalk from optionalDependencies to dependencies. It is statically imported by server code (`src/server/logging.ts`, `src/server/utils/server-lifecycle.ts`), so installs that skip optional packages (`pnpm install --no-optional`, `npm config set optional false`) would fail at module load.
+- Updated dependencies [4d00a1f]
+  - @mcp-use/cli@3.4.2
+  - @mcp-use/inspector@9.0.0
+
+## 1.31.0-canary.1
+
+### Minor Changes
+
+- 4e34b82: fix(react/auth): opener-owned OAuth popup flow so connections never get stuck in "authenticating"
+
+  The browser OAuth popup handoff was fire-and-forget: `authenticate()` opened the
+  popup and then relied on a single `mcp_auth_callback` push message from the
+  callback page to leave the `authenticating` state. Any lost message (popup
+  closed early, severed `window.opener` under COOP, partitioned BroadcastChannel,
+  or a provider remount racing the callback) stranded the UI on "Authenticating…"
+  until a hard refresh — even though tokens were already persisted.
+
+  Adopt the pattern used by mature browser OAuth libraries (auth0-spa-js,
+  oidc-client-ts, msal-browser): the window that opens the popup owns a promise
+  that always settles on one of four outcomes.
+  - New `runAuthPopup()` helper (exported from `mcp-use/auth`) settles on the
+    first of: a `state`-matched result message (postMessage **or**
+    BroadcastChannel), the popup being closed, a `storage` event for the flow's
+    tokens key (robust to severed/partitioned channels), or a timeout. The close
+    and timeout paths check persisted tokens before declaring
+    cancelled/timeout, so a "missed message but tokens landed" case still
+    succeeds.
+  - `useMcp().authenticate()` now awaits `runAuthPopup()` and owns every state
+    transition: success reconnects, cancelled/timeout return to `pending_auth`
+    (re-enabling the Authenticate button), and error fails the connection.
+  - The OAuth callback page stamps result payloads with the originating `state`
+    and `serverUrlHash`. The always-on callback listener now scopes results to
+    the right server and won't clobber an already-`ready` connection with a late
+    failure message.
+
+  fix(react): stop wiping OAuth credentials on routine lifecycle churn
+
+  Persisted OAuth credentials (tokens / client_info / PKCE verifier) are user
+  state, not connection state, and were being destroyed by ordinary lifecycle
+  events — silently logging users out and (when a popup completed after a
+  remount) breaking the flow entirely.
+  - `McpClientProvider`'s `removeServer(id)` no longer clears OAuth storage by
+    default. Pass `removeServer(id, { clearCredentials: true })` for an explicit
+    logout / "forget this server" action (the Inspector's delete-server button
+    now does). This is a behavior change to `removeServer`; the signature stays
+    backward compatible.
+  - `updateServer()` no longer clears OAuth storage — editing options is not a
+    logout. It still remounts to apply the new options.
+  - `useMcp` no longer wipes OAuth storage on unmount mid-flow. Stale
+    authorization state records already expire via their 10-minute TTL and the
+    PKCE verifier is overwritten on the next auth start, so a popup completing
+    after a wrapper remount now lands cleanly.
+
+### Patch Changes
+
+- Updated dependencies [4e34b82]
+  - @mcp-use/cli@3.4.2-canary.1
+  - @mcp-use/inspector@9.0.0-canary.1
+
+## 1.30.3-canary.0
+
+### Patch Changes
+
+- fd4efb7: Move chalk from optionalDependencies to dependencies. It is statically imported by server code (`src/server/logging.ts`, `src/server/utils/server-lifecycle.ts`), so installs that skip optional packages (`pnpm install --no-optional`, `npm config set optional false`) would fail at module load.
+  - @mcp-use/cli@3.4.2-canary.0
+  - @mcp-use/inspector@8.0.3-canary.0
+
+## 1.30.2
+
+### Patch Changes
+
+- 252d034: Downgrade chalk to v4 to fix CJS builds. chalk 5 is ESM-only and is kept external by tsup, so the CJS bundle's `require("chalk")` on Node ≥ 22 returned the module namespace instead of the chalk instance, crashing CJS-built backends (e.g. the Next.js template) on startup with `TypeError: import_chalk.default.gray is not a function`.
+  - @mcp-use/cli@3.4.1
+  - @mcp-use/inspector@8.0.2
+
+## 1.30.2-canary.0
+
+### Patch Changes
+
+- f9fb29b: Downgrade chalk to v4 to fix CJS builds. chalk 5 is ESM-only and is kept external by tsup, so the CJS bundle's `require("chalk")` on Node ≥ 22 returned the module namespace instead of the chalk instance, crashing CJS-built backends (e.g. the Next.js template) on startup with `TypeError: import_chalk.default.gray is not a function`.
+  - @mcp-use/cli@3.4.1-canary.0
+  - @mcp-use/inspector@8.0.2-canary.0
+
+## 1.30.1
+
+### Patch Changes
+
+- c866bda: Fix iframe collapse when widget renders null by allowing zero-height notifications
+
+  Previously, the `height > 0` guard in `McpUseProvider` prevent height notifications when a widget rendered `null`, causing the iframe to persist at its last non-zero height. This fix allows zero heights to pass through unconditionally while maintaining the threshold check for positive heights, enabling proper iframe collapse for empty widgets.
+
+- c866bda: fix(react,client): prevent stale disconnect from wiping a reconnected MCP session
+
+  When `useMcp` reconnects after a URL change (e.g. dashboard environment
+  switch), the previous effect's async `disconnect()` could finish after the
+  new `connect()` and either:
+  1. set `clientRef` to null while React state remained `ready` — surfacing
+     as "MCP client is not ready (current state: ready)"; or
+  2. wipe the freshly-created session out of the underlying client's session
+     map — surfacing as "No active session found" on the next tool call.
+
+  `disconnect()` now only nulls `clientRef` **and** resets the hook state when
+  it has not been superseded by a newer `connect()` (a `connectEpochRef` counter
+  bumped at the start of each `connect()`, plus a client-identity check). This
+  covers both the case where `connect()` reuses the same `BrowserMCPClient`
+  instance for the new URL and a manual `disconnect()` racing a reconnect, which
+  must not clobber the live connection's state back to `discovering`.
+
+  `BaseMCPClient.closeSession()` now only deletes `sessions[name]` if the slot
+  still references the captured session. A parallel `createSession()` from a
+  newer `connect()` may have already written a new session there while we were
+  awaiting `session.disconnect()`; the previous unconditional `delete` in the
+  `finally` block would wipe that new session and break tool calls.
+
+  MCP operation errors also distinguish a missing client from a non-ready
+  state.
+
+- Updated dependencies [c866bda]
+- Updated dependencies [c866bda]
+  - @mcp-use/inspector@8.0.1
+  - @mcp-use/cli@3.4.0
+
+## 1.30.1-canary.3
+
+### Patch Changes
+
+- ea4e6f1: fix(react,client): prevent stale disconnect from wiping a reconnected MCP session
+
+  When `useMcp` reconnects after a URL change (e.g. dashboard environment
+  switch), the previous effect's async `disconnect()` could finish after the
+  new `connect()` and either:
+  1. set `clientRef` to null while React state remained `ready` — surfacing
+     as "MCP client is not ready (current state: ready)"; or
+  2. wipe the freshly-created session out of the underlying client's session
+     map — surfacing as "No active session found" on the next tool call.
+
+  `disconnect()` now only nulls `clientRef` **and** resets the hook state when
+  it has not been superseded by a newer `connect()` (a `connectEpochRef` counter
+  bumped at the start of each `connect()`, plus a client-identity check). This
+  covers both the case where `connect()` reuses the same `BrowserMCPClient`
+  instance for the new URL and a manual `disconnect()` racing a reconnect, which
+  must not clobber the live connection's state back to `discovering`.
+
+  `BaseMCPClient.closeSession()` now only deletes `sessions[name]` if the slot
+  still references the captured session. A parallel `createSession()` from a
+  newer `connect()` may have already written a new session there while we were
+  awaiting `session.disconnect()`; the previous unconditional `delete` in the
+  `finally` block would wipe that new session and break tool calls.
+
+  MCP operation errors also distinguish a missing client from a non-ready
+  state.
+  - @mcp-use/cli@3.4.0-canary.3
+  - @mcp-use/inspector@8.0.1-canary.3
+
+## 1.30.1-canary.2
+
+### Patch Changes
+
+- 8c00a55: Fix iframe collapse when widget renders null by allowing zero-height notifications
+
+  Previously, the `height > 0` guard in `McpUseProvider` prevent height notifications when a widget rendered `null`, causing the iframe to persist at its last non-zero height. This fix allows zero heights to pass through unconditionally while maintaining the threshold check for positive heights, enabling proper iframe collapse for empty widgets.
+  - @mcp-use/cli@3.4.0-canary.2
+  - @mcp-use/inspector@8.0.1-canary.2
+
+## 1.30.1-canary.1
+
+### Patch Changes
+
+- Updated dependencies [afb0e79]
+  - @mcp-use/inspector@8.0.1-canary.1
+  - @mcp-use/cli@3.4.0-canary.1
+
+## 1.30.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [bad4578]
+  - @mcp-use/cli@3.4.0-canary.0
+  - @mcp-use/inspector@8.0.1-canary.0
+
+## 1.30.0
+
+### Minor Changes
+
+- 25ae46e: Add MCP server instructions support to TypeScript server configuration and scaffolded templates.
+- 25ae46e: Add `MCPServer.fromOpenAPI` for creating MCP servers from bundled OpenAPI documents, registering included operations as tools with generated input schemas and request handling.
+
+### Patch Changes
+
+- 25ae46e: Bump `hono` to `4.12.23` to address [CVE-2026-47674](https://github.com/advisories/GHSA-xrhx-7g5j-rcj5), where non-canonical IPv6 forms could bypass static deny rules in the `ip-restriction` middleware.
+- 25ae46e: Fix incomplete escaping when converting Zod string literals and enums to TypeScript type strings. Backslashes are now escaped before double quotes so generated `.d.ts` output remains valid when literal values contain `\` or `"`.
+- 25ae46e: Fix idle session cleanup to release registered refs for expired sessions.
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+  - @mcp-use/cli@3.3.2
+  - @mcp-use/inspector@8.0.0
+
+## 1.30.0-canary.6
+
+### Patch Changes
+
+- Updated dependencies [726bcbb]
+  - @mcp-use/cli@3.3.2-canary.6
+  - @mcp-use/inspector@8.0.0-canary.6
+
+## 1.30.0-canary.5
+
+### Patch Changes
+
+- e4b83e4: Fix idle session cleanup to release registered refs for expired sessions.
+  - @mcp-use/cli@3.3.2-canary.5
+  - @mcp-use/inspector@8.0.0-canary.5
+
+## 1.30.0-canary.4
+
+### Minor Changes
+
+- f8ca6bb: Add `MCPServer.fromOpenAPI` for creating MCP servers from bundled OpenAPI documents, registering included operations as tools with generated input schemas and request handling.
+
+### Patch Changes
+
+- @mcp-use/cli@3.3.2-canary.4
+- @mcp-use/inspector@8.0.0-canary.4
+
+## 1.30.0-canary.3
+
+### Patch Changes
+
+- Updated dependencies [a3d9aa9]
+  - @mcp-use/cli@3.3.2-canary.3
+  - @mcp-use/inspector@8.0.0-canary.3
+
+## 1.30.0-canary.2
+
+### Patch Changes
+
+- b820e74: Bump `hono` to `4.12.23` to address [CVE-2026-47674](https://github.com/advisories/GHSA-xrhx-7g5j-rcj5), where non-canonical IPv6 forms could bypass static deny rules in the `ip-restriction` middleware.
+  - @mcp-use/cli@3.3.2-canary.2
+  - @mcp-use/inspector@8.0.0-canary.2
+
+## 1.30.0-canary.1
+
+### Patch Changes
+
+- 88180d5: Fix incomplete escaping when converting Zod string literals and enums to TypeScript type strings. Backslashes are now escaped before double quotes so generated `.d.ts` output remains valid when literal values contain `\` or `"`.
+  - @mcp-use/cli@3.3.2-canary.1
+  - @mcp-use/inspector@8.0.0-canary.1
+
+## 1.30.0-canary.0
+
+### Minor Changes
+
+- f565f9c: Add MCP server instructions support to TypeScript server configuration and scaffolded templates.
+
+### Patch Changes
+
+- @mcp-use/cli@3.3.2-canary.0
+- @mcp-use/inspector@8.0.0-canary.0
+
 ## 1.29.1
 
 ### Patch Changes

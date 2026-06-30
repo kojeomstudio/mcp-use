@@ -15,6 +15,8 @@ const mockApiInstance = {
   createEnvVariable: vi.fn(),
   updateEnvVariable: vi.fn(),
   deleteEnvVariable: vi.fn(),
+  testAuth: vi.fn(),
+  getServer: vi.fn(),
 };
 
 // Mock the entire api module
@@ -785,6 +787,50 @@ describe("Error Handling", () => {
   });
 });
 
+describe("deployments list command", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("preserves the API order when --sort is provided", async () => {
+    const { isLoggedIn } = await import("../src/utils/config.js");
+    vi.mocked(isLoggedIn).mockResolvedValue(true);
+    mockApiInstance.testAuth.mockResolvedValue({ orgs: [] });
+    mockApiInstance.getServer.mockResolvedValue({ organizationId: "org_1" });
+    mockApiInstance.listDeployments.mockResolvedValue({
+      items: [
+        {
+          ...mockDeployment,
+          id: "dep_alpha",
+          name: "alpha",
+          createdAt: "2024-01-01T00:00:00Z",
+          serverId: "srv_1",
+        },
+        {
+          ...mockDeployment,
+          id: "dep_beta",
+          name: "beta",
+          createdAt: "2024-02-01T00:00:00Z",
+          serverId: "srv_1",
+        },
+      ],
+      total: 2,
+      limit: 30,
+      skip: 0,
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { createDeploymentsCommand } =
+      await import("../src/commands/deployments.js");
+    const cmd = createDeploymentsCommand();
+    await cmd.parseAsync(["list", "--sort", "name:asc"], { from: "user" });
+
+    const output = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
+    expect(output.indexOf("alpha")).toBeLessThan(output.indexOf("beta"));
+    logSpy.mockRestore();
+  });
+});
+
 describe("syncEnvVarsToServer", () => {
   const SERVER_ID = "srv_abc";
 
@@ -832,7 +878,10 @@ describe("syncEnvVarsToServer", () => {
       { API_KEY: "abc", DATABASE_URL: "postgres://x" }
     );
 
-    expect(mockApiInstance.listEnvVariables).toHaveBeenCalledWith(SERVER_ID);
+    expect(mockApiInstance.listEnvVariables).toHaveBeenCalledWith(
+      SERVER_ID,
+      undefined
+    );
     expect(mockApiInstance.createEnvVariable).toHaveBeenCalledTimes(2);
     expect(mockApiInstance.createEnvVariable).toHaveBeenCalledWith(SERVER_ID, {
       key: "API_KEY",

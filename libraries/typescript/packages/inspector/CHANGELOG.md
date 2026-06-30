@@ -1,5 +1,465 @@
 # @mcp-use/inspector
 
+## 11.0.0
+
+### Patch Changes
+
+- 430178c: fix(inspector): default connections to Auto mode with proxy fallback
+
+  The Inspector connection form no longer asks users to choose between Direct and
+  Via Proxy before connecting. New connections use Auto mode by default: the
+  Inspector tries a direct browser connection first, then falls back to the
+  configured Inspector proxy when direct connection fails because of CORS or other
+  proxy-resolvable connection errors.
+
+  Direct and Proxy are still available as advanced connection mode overrides in
+  the Configuration dialog, alongside the editable Proxy Endpoint. The Inspector
+  also preserves legacy `connectionType` configs while writing the new
+  `connectionMode` field.
+
+  `useMcp` now applies the runtime proxy config after automatic fallback when it
+  derives gateway URLs and headers, so fallback retries route through the proxy
+  instead of continuing to use the original direct transport config.
+
+- 430178c: Updated dependency `vite` to `^8.0.16`.
+- 430178c: fix(inspector): stop prompting signed-in users to log in on the hosted free tier
+
+  The hosted inspector (`inspector.manufact.com`) showed the "You're using
+  Manufact's free tier — Sign in to increase your limits" CTA to every visitor
+  using the managed LLM, even when they were already authenticated (MCP-2142).
+
+  `ChatTab` now resolves the shared Manufact session (via the new
+  `useHostedSession` hook, also used by `HostedUserMenu`) and only renders the
+  free-tier sign-in/upgrade chrome for anonymous visitors. The visibility rule is
+  extracted into a pure `shouldShowFreeTierUpgrade` helper and unit-tested.
+
+- 430178c: Read the inspector version from package.json so canary builds and CLI version output stay in sync.
+- 430178c: Replace stale saved auto-connect entries when the advertised transport changes, so embedded Inspector instances do not keep retrying deprecated SSE connections after switching to streamable HTTP.
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+- Updated dependencies [430178c]
+  - mcp-use@1.33.0
+
+## 11.0.0-canary.14
+
+### Patch Changes
+
+- 7455d7a: fix(inspector): default connections to Auto mode with proxy fallback
+
+  The Inspector connection form no longer asks users to choose between Direct and
+  Via Proxy before connecting. New connections use Auto mode by default: the
+  Inspector tries a direct browser connection first, then falls back to the
+  configured Inspector proxy when direct connection fails because of CORS or other
+  proxy-resolvable connection errors.
+
+  Direct and Proxy are still available as advanced connection mode overrides in
+  the Configuration dialog, alongside the editable Proxy Endpoint. The Inspector
+  also preserves legacy `connectionType` configs while writing the new
+  `connectionMode` field.
+
+  `useMcp` now applies the runtime proxy config after automatic fallback when it
+  derives gateway URLs and headers, so fallback retries route through the proxy
+  instead of continuing to use the original direct transport config.
+
+- Updated dependencies [7455d7a]
+  - mcp-use@1.33.0-canary.14
+
+## 11.0.0-canary.13
+
+### Patch Changes
+
+- Updated dependencies [1bd3f8d]
+  - mcp-use@1.33.0-canary.13
+
+## 11.0.0-canary.12
+
+### Patch Changes
+
+- Updated dependencies [0027695]
+  - mcp-use@1.33.0-canary.12
+
+## 11.0.0-canary.11
+
+### Patch Changes
+
+- mcp-use@1.33.0-canary.11
+
+## 11.0.0-canary.10
+
+### Patch Changes
+
+- Updated dependencies [84e9c7d]
+  - mcp-use@1.33.0-canary.10
+
+## 10.0.2-canary.9
+
+### Patch Changes
+
+- 8dfac9c: Replace stale saved auto-connect entries when the advertised transport changes, so embedded Inspector instances do not keep retrying deprecated SSE connections after switching to streamable HTTP.
+  - mcp-use@1.32.2-canary.9
+
+## 10.0.2-canary.8
+
+### Patch Changes
+
+- Updated dependencies [bf90128]
+  - mcp-use@1.32.2-canary.8
+
+## 10.0.2-canary.7
+
+### Patch Changes
+
+- 37337f3: fix(inspector): stop prompting signed-in users to log in on the hosted free tier
+
+  The hosted inspector (`inspector.manufact.com`) showed the "You're using
+  Manufact's free tier — Sign in to increase your limits" CTA to every visitor
+  using the managed LLM, even when they were already authenticated (MCP-2142).
+
+  `ChatTab` now resolves the shared Manufact session (via the new
+  `useHostedSession` hook, also used by `HostedUserMenu`) and only renders the
+  free-tier sign-in/upgrade chrome for anonymous visitors. The visibility rule is
+  extracted into a pure `shouldShowFreeTierUpgrade` helper and unit-tested.
+  - mcp-use@1.32.2-canary.7
+
+## 10.0.2-canary.6
+
+### Patch Changes
+
+- mcp-use@1.32.2-canary.6
+
+## 10.0.2-canary.5
+
+### Patch Changes
+
+- mcp-use@1.32.2-canary.5
+
+## 10.0.2-canary.4
+
+### Patch Changes
+
+- Updated dependencies [b9324be]
+  - mcp-use@1.32.2-canary.4
+
+## 10.0.2-canary.3
+
+### Patch Changes
+
+- e1bcc3f: Read the inspector version from package.json so canary builds and CLI version output stay in sync.
+  - mcp-use@1.32.2-canary.3
+
+## 10.0.2-canary.2
+
+### Patch Changes
+
+- c62e103: Updated dependency `vite` to `^8.0.16`.
+- Updated dependencies [c62e103]
+  - mcp-use@1.32.2-canary.2
+
+## 10.0.2-canary.1
+
+### Patch Changes
+
+- mcp-use@1.32.2-canary.1
+
+## 10.0.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [c242a0c]
+  - mcp-use@1.32.2-canary.0
+
+## 10.0.1
+
+### Patch Changes
+
+- efa7fe7: Fix chat for localhost MCP servers in the hosted inspector (MCP-2419). When the inspector runs in hosted mode the Chat tab streams through the managed cloud backend, which connects to the MCP server from the server side and cannot reach a user's `localhost` server — the request returns a 502 that surfaces in the browser as an opaque CORS / "Failed to fetch" error. Loopback server URLs now fall back to client-side (in-browser) chat streaming, and the configure-key empty state explains why the managed key is unavailable and that a personal API key is needed. The notice only appears in hosted mode; the local inspector is unchanged.
+- efa7fe7: Add a centered, animated scroll-to-bottom button to the Inspector chat when viewing older messages.
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+- Updated dependencies [efa7fe7]
+  - mcp-use@1.32.1
+
+## 10.0.1-canary.14
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.14
+
+## 10.0.1-canary.13
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.13
+
+## 10.0.1-canary.12
+
+### Patch Changes
+
+- Updated dependencies [c9e1696]
+  - mcp-use@1.32.1-canary.12
+
+## 10.0.1-canary.11
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.11
+
+## 10.0.1-canary.10
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.10
+
+## 10.0.1-canary.9
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.9
+
+## 10.0.1-canary.8
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.8
+
+## 10.0.1-canary.7
+
+### Patch Changes
+
+- 1fb87d2: Add a centered, animated scroll-to-bottom button to the Inspector chat when viewing older messages.
+  - mcp-use@1.32.1-canary.7
+
+## 10.0.1-canary.6
+
+### Patch Changes
+
+- Updated dependencies [6e7e9bf]
+  - mcp-use@1.32.1-canary.6
+
+## 10.0.1-canary.5
+
+### Patch Changes
+
+- Updated dependencies [1a16878]
+  - mcp-use@1.32.1-canary.5
+
+## 10.0.1-canary.4
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.4
+
+## 10.0.1-canary.3
+
+### Patch Changes
+
+- 2038e04: Fix chat for localhost MCP servers in the hosted inspector (MCP-2419). When the inspector runs in hosted mode the Chat tab streams through the managed cloud backend, which connects to the MCP server from the server side and cannot reach a user's `localhost` server — the request returns a 502 that surfaces in the browser as an opaque CORS / "Failed to fetch" error. Loopback server URLs now fall back to client-side (in-browser) chat streaming, and the configure-key empty state explains why the managed key is unavailable and that a personal API key is needed. The notice only appears in hosted mode; the local inspector is unchanged.
+  - mcp-use@1.32.1-canary.3
+
+## 10.0.1-canary.2
+
+### Patch Changes
+
+- Updated dependencies [8d626cb]
+  - mcp-use@1.32.1-canary.2
+
+## 10.0.1-canary.1
+
+### Patch Changes
+
+- Updated dependencies [a3f3b65]
+  - mcp-use@1.32.1-canary.1
+
+## 10.0.1-canary.0
+
+### Patch Changes
+
+- mcp-use@1.32.1-canary.0
+
+## 10.0.0
+
+### Patch Changes
+
+- Updated dependencies [5b4afc8]
+  - mcp-use@1.32.0
+
+## 10.0.0-canary.0
+
+### Patch Changes
+
+- Updated dependencies [a683d43]
+  - mcp-use@1.32.0-canary.0
+
+## 9.0.1
+
+### Patch Changes
+
+- mcp-use@1.31.1
+
+## 9.0.1-canary.0
+
+### Patch Changes
+
+- mcp-use@1.31.1-canary.0
+
+## 9.0.0
+
+### Patch Changes
+
+- Updated dependencies [4d00a1f]
+- Updated dependencies [4d00a1f]
+  - mcp-use@1.31.0
+
+## 9.0.0-canary.1
+
+### Patch Changes
+
+- Updated dependencies [4e34b82]
+  - mcp-use@1.31.0-canary.1
+
+## 8.0.3-canary.0
+
+### Patch Changes
+
+- Updated dependencies [fd4efb7]
+  - mcp-use@1.30.3-canary.0
+
+## 8.0.2
+
+### Patch Changes
+
+- Updated dependencies [252d034]
+  - mcp-use@1.30.2
+
+## 8.0.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [f9fb29b]
+  - mcp-use@1.30.2-canary.0
+
+## 8.0.1
+
+### Patch Changes
+
+- c866bda: fix(inspector): stop widget status labels from blocking iframe pointer events
+
+  The MCP Apps preview pane rendered the invoking/invoked status label in an
+  absolutely positioned wrapper with `h-full`, which intercepted hover, click,
+  and form control interactions in a vertical strip along the left edge of the
+  widget iframe for the entire lifetime of the panel.
+
+  Apply `pointer-events-none`, drop the full-height wrapper, and align the Apps
+  SDK status label with the same non-blocking behavior.
+
+  Closes #1678
+
+- Updated dependencies [c866bda]
+- Updated dependencies [c866bda]
+  - mcp-use@1.30.1
+
+## 8.0.1-canary.3
+
+### Patch Changes
+
+- Updated dependencies [ea4e6f1]
+  - mcp-use@1.30.1-canary.3
+
+## 8.0.1-canary.2
+
+### Patch Changes
+
+- Updated dependencies [8c00a55]
+  - mcp-use@1.30.1-canary.2
+
+## 8.0.1-canary.1
+
+### Patch Changes
+
+- afb0e79: fix(inspector): stop widget status labels from blocking iframe pointer events
+
+  The MCP Apps preview pane rendered the invoking/invoked status label in an
+  absolutely positioned wrapper with `h-full`, which intercepted hover, click,
+  and form control interactions in a vertical strip along the left edge of the
+  widget iframe for the entire lifetime of the panel.
+
+  Apply `pointer-events-none`, drop the full-height wrapper, and align the Apps
+  SDK status label with the same non-blocking behavior.
+
+  Closes #1678
+  - mcp-use@1.30.1-canary.1
+
+## 8.0.1-canary.0
+
+### Patch Changes
+
+- mcp-use@1.30.1-canary.0
+
+## 8.0.0
+
+### Patch Changes
+
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+- Updated dependencies [25ae46e]
+  - mcp-use@1.30.0
+
+## 8.0.0-canary.6
+
+### Patch Changes
+
+- mcp-use@1.30.0-canary.6
+
+## 8.0.0-canary.5
+
+### Patch Changes
+
+- Updated dependencies [e4b83e4]
+  - mcp-use@1.30.0-canary.5
+
+## 8.0.0-canary.4
+
+### Patch Changes
+
+- Updated dependencies [f8ca6bb]
+  - mcp-use@1.30.0-canary.4
+
+## 8.0.0-canary.3
+
+### Patch Changes
+
+- mcp-use@1.30.0-canary.3
+
+## 8.0.0-canary.2
+
+### Patch Changes
+
+- Updated dependencies [b820e74]
+  - mcp-use@1.30.0-canary.2
+
+## 8.0.0-canary.1
+
+### Patch Changes
+
+- Updated dependencies [88180d5]
+  - mcp-use@1.30.0-canary.1
+
+## 8.0.0-canary.0
+
+### Patch Changes
+
+- Updated dependencies [f565f9c]
+  - mcp-use@1.30.0-canary.0
+
 ## 7.0.1
 
 ### Patch Changes
