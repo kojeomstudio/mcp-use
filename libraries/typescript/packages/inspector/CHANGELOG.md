@@ -1,5 +1,75 @@
 # @mcp-use/inspector
 
+## 12.0.3
+
+### Patch Changes
+
+- 6231261: Fix broken tunneling docs link in the tunnel popover. The "Docs" link pointed to https://manufact.com/docs/tunneling, which returns a 404; it now points to https://mcp-use.com/docs/tunneling.
+  - mcp-use@1.34.3
+
+## 12.0.3-canary.0
+
+### Patch Changes
+
+- 744b8e5: Fix broken tunneling docs link in the tunnel popover. The "Docs" link pointed to https://manufact.com/docs/tunneling, which returns a 404; it now points to https://mcp-use.com/docs/tunneling.
+  - mcp-use@1.34.3-canary.0
+
+## 12.0.2
+
+### Patch Changes
+
+- 55a300a: Fix the CDN bundle when served by a backend-less shell (the upcoming
+  SDK v2 `/inspector` route):
+  - Auto-connect now reads the connect URL the SDK v2 shell injects as
+    `window.__MCP_USE_INSPECTOR__.autoConnectUrl` instead of requiring the
+    inspector backend's `config.json` endpoint.
+  - The version badge and MCP `clientInfo` fall back to the compile-time
+    bundle version when `window.__INSPECTOR_VERSION__` is not injected,
+    instead of reporting a hardcoded `1.0.0`.
+  - mcp-use@1.34.2
+
+## 12.0.2-canary.0
+
+### Patch Changes
+
+- e8873ab: Fix the CDN bundle when served by a backend-less shell (the upcoming
+  SDK v2 `/inspector` route):
+  - Auto-connect now reads the connect URL the SDK v2 shell injects as
+    `window.__MCP_USE_INSPECTOR__.autoConnectUrl` instead of requiring the
+    inspector backend's `config.json` endpoint.
+  - The version badge and MCP `clientInfo` fall back to the compile-time
+    bundle version when `window.__INSPECTOR_VERSION__` is not injected,
+    instead of reporting a hardcoded `1.0.0`.
+  - mcp-use@1.34.2-canary.0
+
+## 12.0.1
+
+### Patch Changes
+
+- Updated dependencies [7cc7598]
+  - mcp-use@1.34.1
+
+## 12.0.1-canary.0
+
+### Patch Changes
+
+- Updated dependencies [bda5276]
+  - mcp-use@1.34.1-canary.0
+
+## 12.0.0
+
+### Patch Changes
+
+- Updated dependencies [dcd97d6]
+  - mcp-use@1.34.0
+
+## 12.0.0-canary.0
+
+### Patch Changes
+
+- Updated dependencies [c2699ff]
+  - mcp-use@1.34.0-canary.0
+
 ## 11.0.0
 
 ### Patch Changes

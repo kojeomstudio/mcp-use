@@ -1,5 +1,87 @@
 # mcp-use
 
+## 1.34.3
+
+### Patch Changes
+
+- Updated dependencies [6231261]
+  - @mcp-use/inspector@12.0.3
+  - @mcp-use/cli@3.6.4
+
+## 1.34.3-canary.0
+
+### Patch Changes
+
+- Updated dependencies [744b8e5]
+  - @mcp-use/inspector@12.0.3-canary.0
+  - @mcp-use/cli@3.6.4-canary.0
+
+## 1.34.2
+
+### Patch Changes
+
+- Updated dependencies [55a300a]
+  - @mcp-use/inspector@12.0.2
+  - @mcp-use/cli@3.6.3
+
+## 1.34.2-canary.0
+
+### Patch Changes
+
+- Updated dependencies [e8873ab]
+  - @mcp-use/inspector@12.0.2-canary.0
+  - @mcp-use/cli@3.6.3-canary.0
+
+## 1.34.1
+
+### Patch Changes
+
+- 7cc7598: Fix OAuth discovery for MCP connections tunneled through a gateway/inspector proxy.
+
+  When MCP traffic goes through a proxy (`proxyConfig` / `gatewayUrl`), the SDK transport derives `/.well-known/*` discovery URLs from the proxy URL whenever no `resource_metadata` hint is available — the SSE transport's EventSource cannot read `WWW-Authenticate`, and token refresh runs without a 401 response at hand. Discovery then landed on the proxy origin (which serves no OAuth metadata), failed, and the server was misclassified as "does not support OAuth", hiding the Authenticate button.
+
+  `BrowserOAuthClientProvider.getProxyFetch()` now re-anchors connection-origin `.well-known` lookups onto the actual MCP server before routing them through the OAuth proxy, reproducing exactly what a direct connection would have requested (including the RFC 8414 §3.1 / RFC 9728 §3.1 path-insertion form). MCP traffic can therefore always stay behind the proxy — required since browser CORS on direct connections cannot be guaranteed (edge errors bypass CORS middleware) — without breaking OAuth discovery.
+  - @mcp-use/cli@3.6.2
+  - @mcp-use/inspector@12.0.1
+
+## 1.34.1-canary.0
+
+### Patch Changes
+
+- bda5276: Fix OAuth discovery for MCP connections tunneled through a gateway/inspector proxy.
+
+  When MCP traffic goes through a proxy (`proxyConfig` / `gatewayUrl`), the SDK transport derives `/.well-known/*` discovery URLs from the proxy URL whenever no `resource_metadata` hint is available — the SSE transport's EventSource cannot read `WWW-Authenticate`, and token refresh runs without a 401 response at hand. Discovery then landed on the proxy origin (which serves no OAuth metadata), failed, and the server was misclassified as "does not support OAuth", hiding the Authenticate button.
+
+  `BrowserOAuthClientProvider.getProxyFetch()` now re-anchors connection-origin `.well-known` lookups onto the actual MCP server before routing them through the OAuth proxy, reproducing exactly what a direct connection would have requested (including the RFC 8414 §3.1 / RFC 9728 §3.1 path-insertion form). MCP traffic can therefore always stay behind the proxy — required since browser CORS on direct connections cannot be guaranteed (edge errors bypass CORS middleware) — without breaking OAuth discovery.
+  - @mcp-use/cli@3.6.2-canary.0
+  - @mcp-use/inspector@12.0.1-canary.0
+
+## 1.34.0
+
+### Minor Changes
+
+- dcd97d6: Add `oauthProxyUrl` and stop misclassifying discovered OAuth servers as unsupported.
+  - `UseMcpOptions.oauthProxyUrl` lets consumers route only OAuth traffic (`.well-known` discovery, DCR, token exchange) through a transparent server-side proxy for browser CORS while keeping MCP traffic direct to the server. It takes precedence over the URL derived from `proxyConfig.proxyAddress`, and because the transparent proxy swaps the `fetch` rather than the metadata URLs, RFC 8414 §3.3 issuer validation still passes. This replaces routing MCP through the proxy purely to reach the OAuth endpoints, which anchored OAuth discovery on the proxy origin and broke auth for gateway-hosted servers.
+  - `useMcp` no longer drops a server to `failed` with "Server does not support OAuth" when OAuth discovery already succeeded on an earlier pass. If the auth provider has a prepared authorization URL (and `preventAutoAuth` is set), a later discovery failure — e.g. from a token refresh, SSE fallback, or a metadata probe that fell back to the transport origin — surfaces `pending_auth` (keeping the Authenticate button) instead of masking the working OAuth flow.
+
+### Patch Changes
+
+- @mcp-use/cli@3.6.1
+- @mcp-use/inspector@12.0.0
+
+## 1.34.0-canary.0
+
+### Minor Changes
+
+- c2699ff: Add `oauthProxyUrl` and stop misclassifying discovered OAuth servers as unsupported.
+  - `UseMcpOptions.oauthProxyUrl` lets consumers route only OAuth traffic (`.well-known` discovery, DCR, token exchange) through a transparent server-side proxy for browser CORS while keeping MCP traffic direct to the server. It takes precedence over the URL derived from `proxyConfig.proxyAddress`, and because the transparent proxy swaps the `fetch` rather than the metadata URLs, RFC 8414 §3.3 issuer validation still passes. This replaces routing MCP through the proxy purely to reach the OAuth endpoints, which anchored OAuth discovery on the proxy origin and broke auth for gateway-hosted servers.
+  - `useMcp` no longer drops a server to `failed` with "Server does not support OAuth" when OAuth discovery already succeeded on an earlier pass. If the auth provider has a prepared authorization URL (and `preventAutoAuth` is set), a later discovery failure — e.g. from a token refresh, SSE fallback, or a metadata probe that fell back to the transport origin — surfaces `pending_auth` (keeping the Authenticate button) instead of masking the working OAuth flow.
+
+### Patch Changes
+
+- @mcp-use/cli@3.6.1-canary.0
+- @mcp-use/inspector@12.0.0-canary.0
+
 ## 1.33.0
 
 ### Minor Changes
